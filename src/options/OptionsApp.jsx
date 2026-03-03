@@ -36,6 +36,69 @@ import {
 } from "./lib/utils.js";
 import { createDefaultUpdateState, UPDATE_STATE_KEY } from "../shared/update.js";
 
+/* ===== Sidebar navigation icons (inline SVG) ===== */
+function IconHome() {
+  return (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" />
+      <path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+    </svg>
+  );
+}
+
+function IconTranslate() {
+  return (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m5 8 6 6" /><path d="m4 14 6-6 2-3" /><path d="M2 5h12" /><path d="M7 2h1" />
+      <path d="m22 22-5-10-5 10" /><path d="M14 18h6" />
+    </svg>
+  );
+}
+
+function IconKeyboard() {
+  return (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <rect width="20" height="16" x="2" y="4" rx="2" /><path d="M6 8h.001" /><path d="M10 8h.001" />
+      <path d="M14 8h.001" /><path d="M18 8h.001" /><path d="M8 12h.001" /><path d="M12 12h.001" />
+      <path d="M16 12h.001" /><path d="M7 16h10" />
+    </svg>
+  );
+}
+
+function IconBook() {
+  return (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+      <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+    </svg>
+  );
+}
+
+function IconInfo() {
+  return (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" />
+    </svg>
+  );
+}
+
+function IconBrand() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m5 8 6 6" /><path d="m4 14 6-6 2-3" /><path d="M2 5h12" /><path d="M7 2h1" />
+      <path d="m22 22-5-10-5 10" /><path d="M14 18h6" />
+    </svg>
+  );
+}
+
+const NAV_ITEMS = [
+  { id: "home", label: "首页", Icon: IconHome },
+  { id: "translate", label: "翻译测试", Icon: IconTranslate },
+  { id: "shortcuts", label: "快捷键", Icon: IconKeyboard },
+  { id: "learning", label: "学习模式", Icon: IconBook },
+  { id: "about", label: "关于", Icon: IconInfo },
+];
+
 export function OptionsApp() {
   const currentVersion = chrome.runtime.getManifest().version;
   const [view, setView] = useState(
@@ -518,456 +581,447 @@ export function OptionsApp() {
         onClose={() => setOriginsModalOpen(false)}
       />
       <div className="options">
-        <h1>Ollama 翻译设置</h1>
-        <ConnectionStatusBanner
-          status={connectionStatus}
-          onOpenOrigins={() => setOriginsModalOpen(true)}
-        />
-        <div className="options-tabs">
-          <div className="options-tabs__tablist" role="tablist" aria-label="设置">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === "home"}
-              onClick={() => setActiveTab("home")}
-            >
-              首页
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === "translate"}
-              onClick={() => setActiveTab("translate")}
-            >
-              翻译测试
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === "shortcuts"}
-              onClick={() => setActiveTab("shortcuts")}
-            >
-              快捷键
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === "learning"}
-              onClick={() => setActiveTab("learning")}
-            >
-              学习模式
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === "about"}
-              onClick={() => setActiveTab("about")}
-            >
-              关于
-            </button>
-          </div>
-
-          <div className="options-tabs__panel" hidden={activeTab !== "home"}>
-            <div className="card">
-              <h2>Ollama</h2>
-              <div className="field">
-                <label htmlFor="ollamaUrl">Ollama API 地址</label>
-                <input
-                  id="ollamaUrl"
-                  type="text"
-                  placeholder="http://127.0.0.1:11434"
-                  value={settings.ollamaUrl}
-                  onChange={(event) =>
-                    updateSettings({ ollamaUrl: event.target.value }, "debounced", {
-                      delay: 500,
-                    })
-                  }
-                  onBlur={() => {
-                    void persistSettings(settingsRef.current).catch((error) => {
-                      console.error("Save settings failed:", error);
-                      showAutoSaveStatus("自动保存失败", true);
-                    });
-                  }}
-                />
-                <div className="field-row" style={{ marginTop: 8 }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={async () => {
-                      setTestConnectionResult({
-                        text: "检测中…",
-                        tone: "",
-                        showAction: false,
-                      });
-                      await updateConnectionStatus(settingsRef.current, {
-                        skipModalOnError: true,
-                        preserveTestMessage: false,
-                      });
-                    }}
-                  >
-                    测试连接
-                  </button>
-                  <span className={testConnectionClassName}>{testConnectionResult.text}</span>
-                  {testConnectionResult.showAction ? (
-                    <button
-                      type="button"
-                      className="btn btn-secondary test-result-action"
-                      onClick={() => setOriginsModalOpen(true)}
-                    >
-                      查看解决方法
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="field">
-                <label htmlFor="ollamaModel">
-                  模型<span className="model-count">{modelCountText}</span>
-                </label>
-                <input type="hidden" id="ollamaModel" value={settings.ollamaModel} />
-                <ModelDropdown
-                  models={models}
-                  selectedValue={settings.ollamaModel}
-                  disabled={connectionStatus.kind !== "ok"}
-                  isOpen={modelDropdownOpen}
-                  onToggle={() => {
-                    if (connectionStatus.kind !== "ok") return;
-                    setModelDropdownOpen((open) => !open);
-                  }}
-                  onSelect={(value) => {
-                    setModelDropdownOpen(false);
-                    updateSettings({ ollamaModel: value }, "now");
-                  }}
-                  dropdownRef={dropdownRef}
-                />
-              </div>
-
-              <div className="field">
-                <label htmlFor="ollamaTranslateTargetLang">默认翻译语言</label>
-                <select
-                  id="ollamaTranslateTargetLang"
-                  className="select"
-                  value={settings.ollamaTranslateTargetLang}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setTestTargetLang(value);
-                    updateSettings({ ollamaTranslateTargetLang: value }, "now");
-                  }}
-                >
-                  {LANG_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+        {/* ===== Sidebar ===== */}
+        <aside className="options-sidebar">
+          <div className="sidebar-brand">
+            <div className="sidebar-brand__icon">
+              <IconBrand />
             </div>
+            <span className="sidebar-brand__text">Ollama 翻译</span>
           </div>
-
-          <div className="options-tabs__panel" hidden={activeTab !== "translate"}>
-            <div className="card card-translate-test">
-              <h2>翻译测试</h2>
-              <div className="field">
-                <label htmlFor="ollamaTestInput">要翻译的文本</label>
-                <textarea
-                  id="ollamaTestInput"
-                  className="textarea"
-                  rows="3"
-                  placeholder="输入要翻译的文本，点击下方按钮测试"
-                  value={testInput}
-                  onChange={(event) => setTestInput(event.target.value)}
-                ></textarea>
-              </div>
-              <div className="field translate-test-actions-wrap">
-                <div className="field translate-test-actions">
-                  <label htmlFor="ollamaTestSourceLang" className="translate-test-actions__label">
-                    输入语言
-                  </label>
-                  <div className="translate-test-actions__row">
-                    <select
-                      id="ollamaTestSourceLang"
-                      className="select translate-test-actions__select"
-                      value={testSourceLang}
-                      onChange={(event) => setTestSourceLang(event.target.value)}
-                    >
-                      <option value="auto">自动识别</option>
-                      {LANG_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    <button type="button" className="btn btn-secondary" onClick={runDetectLanguage}>
-                      识别语言
-                    </button>
-                    <span
-                      className={`detect-lang-result ${detectLangResult.isError ? "error" : ""}`.trim()}
-                      aria-live="polite"
-                    >
-                      {detectLangResult.text}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="field translate-test-actions">
-                  <label htmlFor="ollamaTestLang" className="translate-test-actions__label">
-                    翻译为
-                  </label>
-                  <div className="translate-test-actions__row">
-                    <select
-                      id="ollamaTestLang"
-                      className="select translate-test-actions__select"
-                      value={testTargetLang}
-                      onChange={(event) => setTestTargetLang(event.target.value)}
-                    >
-                      {LANG_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    <button type="button" className="btn btn-secondary" onClick={runTranslateTest}>
-                      测试翻译
-                    </button>
-                    <span
-                      className={`detect-lang-result ${testTranslateHint.isError ? "error" : ""}`.trim()}
-                      aria-live="polite"
-                    >
-                      {testTranslateHint.text}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="field translate-test-actions translate-test-result-row">
-                  <label className="translate-test-actions__label">翻译</label>
-                  <div className={testTranslateClassName} aria-live="polite">
-                    {testTranslateResult.text}
-                  </div>
-                </div>
-              </div>
-            </div>
+          <nav className="sidebar-nav">
+            {NAV_ITEMS.map(({ id, label, Icon }) => (
+              <button
+                key={id}
+                type="button"
+                className="sidebar-nav-item"
+                role="tab"
+                aria-selected={activeTab === id}
+                onClick={() => setActiveTab(id)}
+              >
+                <Icon />
+                <span>{label}</span>
+              </button>
+            ))}
+          </nav>
+          <div className="sidebar-footer">
+            <span className="sidebar-version">v{currentVersion}</span>
           </div>
+        </aside>
 
-          <div className="options-tabs__panel" hidden={activeTab !== "shortcuts"}>
-            <div className="card shortcuts-card">
-              <h2>快捷键</h2>
-              <p className="shortcuts-desc">
-                选中页面文字后，可使用快捷键直接翻译（需在浏览器中先绑定按键）。
-              </p>
-              <div className="field">
-                <label>自动翻译模式</label>
-                <div className="choice-list">
-                  <label className="choice-item">
-                    <input
-                      type="radio"
-                      name="autoTranslateMode"
-                      value="off"
-                      checked={settings.ollamaAutoTranslateMode === "off"}
-                      onChange={() =>
-                        updateSettings({ ollamaAutoTranslateMode: "off" }, "now")
-                      }
-                    />
-                    <span className="choice-item__title">关闭自动翻译</span>
-                    <span className="choice-item__hint">
-                      仅保留手动快捷键、右键菜单和选区按钮。
-                    </span>
-                  </label>
-                  <label className="choice-item">
-                    <input
-                      type="radio"
-                      name="autoTranslateMode"
-                      value="selection"
-                      checked={settings.ollamaAutoTranslateMode === "selection"}
-                      onChange={() =>
-                        updateSettings({ ollamaAutoTranslateMode: "selection" }, "now")
-                      }
-                    />
-                    <span className="choice-item__title">双击 / 三击选中后自动翻译</span>
-                    <span className="choice-item__hint">
-                      双击单词或三击整段后自动翻译，适合基于选区的操作方式。
-                    </span>
-                  </label>
-                  <label className="choice-item">
-                    <input
-                      type="radio"
-                      name="autoTranslateMode"
-                      value="hover"
-                      checked={settings.ollamaAutoTranslateMode === "hover"}
-                      onChange={() =>
-                        updateSettings({ ollamaAutoTranslateMode: "hover" }, "now")
-                      }
-                    />
-                    <span className="choice-item__title">悬停自动翻译</span>
-                    <span className="choice-item__hint">
-                      鼠标移动到文本上后自动取词或取整段，无需双击或按快捷键。
-                    </span>
-                  </label>
-                </div>
-              </div>
+        {/* ===== Content ===== */}
+        <main className="options-content">
+          <h1>Ollama 翻译设置</h1>
+          <ConnectionStatusBanner
+            status={connectionStatus}
+            onOpenOrigins={() => setOriginsModalOpen(true)}
+          />
+          <div className="options-tabs">
+            {/* hidden original tablist — navigation is now in sidebar */}
+            <div className="options-tabs__tablist" role="tablist" aria-label="设置"></div>
 
-              <div className="field" hidden={settings.ollamaAutoTranslateMode !== "hover"}>
-                <label htmlFor="hoverTranslateScope">悬停翻译范围</label>
-                <select
-                  id="hoverTranslateScope"
-                  className="select"
-                  value={settings.ollamaHoverTranslateScope}
-                  onChange={(event) =>
-                    updateSettings(
-                      { ollamaHoverTranslateScope: event.target.value },
-                      "now",
-                    )
-                  }
-                >
-                  <option value="word">只翻译单词</option>
-                  <option value="paragraph">翻译整段话</option>
-                </select>
-                <span className="hint">
-                  悬停模式下，决定自动发送给 Ollama 的文本范围。
-                </span>
-              </div>
-
-              <div className="field" hidden={settings.ollamaAutoTranslateMode !== "hover"}>
-                <label htmlFor="hoverTranslateDelayMs">悬停延迟</label>
-                <div className="input-with-suffix">
+            <div className="options-tabs__panel" hidden={activeTab !== "home"} key="home">
+              <div className="card">
+                <h2>Ollama</h2>
+                <div className="field">
+                  <label htmlFor="ollamaUrl">Ollama API 地址</label>
                   <input
-                    id="hoverTranslateDelayMs"
-                    type="number"
-                    className="field-input field-input--number"
-                    min="0"
-                    max="5000"
-                    step="50"
-                    inputMode="numeric"
-                    value={settings.ollamaHoverTranslateDelayMs}
+                    id="ollamaUrl"
+                    type="text"
+                    placeholder="http://127.0.0.1:11434"
+                    value={settings.ollamaUrl}
                     onChange={(event) =>
-                      updateSettings(
-                        { ollamaHoverTranslateDelayMs: event.target.value },
-                        "debounced",
-                        { delay: 500 },
-                      )
+                      updateSettings({ ollamaUrl: event.target.value }, "debounced", {
+                        delay: 500,
+                      })
                     }
                     onBlur={() => {
-                      const normalized = String(
-                        normalizeHoverTranslateDelayMs(
-                          settingsRef.current.ollamaHoverTranslateDelayMs,
-                        ),
-                      );
-                      const nextSettings = {
-                        ...settingsRef.current,
-                        ollamaHoverTranslateDelayMs: normalized,
-                      };
-                      settingsRef.current = nextSettings;
-                      setSettings(nextSettings);
-                      void persistSettings(nextSettings).catch((error) => {
+                      void persistSettings(settingsRef.current).catch((error) => {
                         console.error("Save settings failed:", error);
                         showAutoSaveStatus("自动保存失败", true);
                       });
                     }}
                   />
-                  <span className="input-suffix">毫秒</span>
+                  <div className="field-row" style={{ marginTop: 10 }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={async () => {
+                        setTestConnectionResult({
+                          text: "检测中…",
+                          tone: "",
+                          showAction: false,
+                        });
+                        await updateConnectionStatus(settingsRef.current, {
+                          skipModalOnError: true,
+                          preserveTestMessage: false,
+                        });
+                      }}
+                    >
+                      测试连接
+                    </button>
+                    <span className={testConnectionClassName}>{testConnectionResult.text}</span>
+                    {testConnectionResult.showAction ? (
+                      <button
+                        type="button"
+                        className="btn btn-secondary test-result-action"
+                        onClick={() => setOriginsModalOpen(true)}
+                      >
+                        查看解决方法
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
-                <span className="hint">
-                  鼠标停留多久后开始自动翻译，默认 200 毫秒。
-                </span>
-              </div>
 
-              <ShortcutsList
-                commands={shortcuts}
-                supportsCommands={!!chrome.commands?.getAll}
-              />
-              <div className="shortcuts-actions">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={openShortcutsPage}
-                >
-                  打开浏览器快捷键设置
-                </button>
-                {showShortcutsHint ? (
-                  <span className="hint shortcuts-open-hint">
-                    若无法自动打开，请手动打开：扩展程序 → 键盘快捷方式（Chrome
-                    地址栏输入 <code>{SHORTCUTS_URL}</code>）
-                  </span>
-                ) : null}
+                <div className="field">
+                  <label htmlFor="ollamaModel">
+                    模型<span className="model-count">{modelCountText}</span>
+                  </label>
+                  <input type="hidden" id="ollamaModel" value={settings.ollamaModel} />
+                  <ModelDropdown
+                    models={models}
+                    selectedValue={settings.ollamaModel}
+                    disabled={connectionStatus.kind !== "ok"}
+                    isOpen={modelDropdownOpen}
+                    onToggle={() => {
+                      if (connectionStatus.kind !== "ok") return;
+                      setModelDropdownOpen((open) => !open);
+                    }}
+                    onSelect={(value) => {
+                      setModelDropdownOpen(false);
+                      updateSettings({ ollamaModel: value }, "now");
+                    }}
+                    dropdownRef={dropdownRef}
+                  />
+                </div>
+
+                <div className="field">
+                  <label htmlFor="ollamaTranslateTargetLang">默认翻译语言</label>
+                  <select
+                    id="ollamaTranslateTargetLang"
+                    className="select"
+                    value={settings.ollamaTranslateTargetLang}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setTestTargetLang(value);
+                      updateSettings({ ollamaTranslateTargetLang: value }, "now");
+                    }}
+                  >
+                    {LANG_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
-            <p className="shortcuts-hint">
-              使用方式：选中文字后按快捷键；或将鼠标悬停在单词上按快捷键；或右键
-              「Ollama 翻译选中内容」
-            </p>
-          </div>
 
-          <div className="options-tabs__panel" hidden={activeTab !== "learning"}>
-            <div className="card">
-              <h2>学习模式</h2>
-              <div className="field">
-                <label className="checkbox-label" htmlFor="learningModeEnabled">
-                  <input
-                    id="learningModeEnabled"
-                    type="checkbox"
-                    checked={settings.ollamaLearningModeEnabled}
+            <div className="options-tabs__panel" hidden={activeTab !== "translate"} key="translate">
+              <div className="card card-translate-test">
+                <h2>翻译测试</h2>
+                <div className="field">
+                  <label htmlFor="ollamaTestInput">要翻译的文本</label>
+                  <textarea
+                    id="ollamaTestInput"
+                    className="textarea"
+                    rows="3"
+                    placeholder="输入要翻译的文本，点击下方按钮测试"
+                    value={testInput}
+                    onChange={(event) => setTestInput(event.target.value)}
+                  ></textarea>
+                </div>
+                <div className="field translate-test-actions-wrap">
+                  <div className="field translate-test-actions">
+                    <label htmlFor="ollamaTestSourceLang" className="translate-test-actions__label">
+                      输入语言
+                    </label>
+                    <div className="translate-test-actions__row">
+                      <select
+                        id="ollamaTestSourceLang"
+                        className="select translate-test-actions__select"
+                        value={testSourceLang}
+                        onChange={(event) => setTestSourceLang(event.target.value)}
+                      >
+                        <option value="auto">自动识别</option>
+                        {LANG_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <button type="button" className="btn btn-secondary" onClick={runDetectLanguage}>
+                        识别语言
+                      </button>
+                      <span
+                        className={`detect-lang-result ${detectLangResult.isError ? "error" : ""}`.trim()}
+                        aria-live="polite"
+                      >
+                        {detectLangResult.text}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="field translate-test-actions">
+                    <label htmlFor="ollamaTestLang" className="translate-test-actions__label">
+                      翻译为
+                    </label>
+                    <div className="translate-test-actions__row">
+                      <select
+                        id="ollamaTestLang"
+                        className="select translate-test-actions__select"
+                        value={testTargetLang}
+                        onChange={(event) => setTestTargetLang(event.target.value)}
+                      >
+                        {LANG_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <button type="button" className="btn btn-secondary" onClick={runTranslateTest}>
+                        测试翻译
+                      </button>
+                      <span
+                        className={`detect-lang-result ${testTranslateHint.isError ? "error" : ""}`.trim()}
+                        aria-live="polite"
+                      >
+                        {testTranslateHint.text}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="field translate-test-actions translate-test-result-row">
+                    <label className="translate-test-actions__label">翻译</label>
+                    <div className={testTranslateClassName} aria-live="polite">
+                      {testTranslateResult.text}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="options-tabs__panel" hidden={activeTab !== "shortcuts"} key="shortcuts">
+              <div className="card shortcuts-card">
+                <h2>快捷键</h2>
+                <p className="shortcuts-desc">
+                  选中页面文字后，可使用快捷键直接翻译（需在浏览器中先绑定按键）。
+                </p>
+                <div className="field">
+                  <label>自动翻译模式</label>
+                  <div className="choice-list">
+                    <label className="choice-item">
+                      <input
+                        type="radio"
+                        name="autoTranslateMode"
+                        value="off"
+                        checked={settings.ollamaAutoTranslateMode === "off"}
+                        onChange={() =>
+                          updateSettings({ ollamaAutoTranslateMode: "off" }, "now")
+                        }
+                      />
+                      <span className="choice-item__title">关闭自动翻译</span>
+                      <span className="choice-item__hint">
+                        仅保留手动快捷键、右键菜单和选区按钮。
+                      </span>
+                    </label>
+                    <label className="choice-item">
+                      <input
+                        type="radio"
+                        name="autoTranslateMode"
+                        value="selection"
+                        checked={settings.ollamaAutoTranslateMode === "selection"}
+                        onChange={() =>
+                          updateSettings({ ollamaAutoTranslateMode: "selection" }, "now")
+                        }
+                      />
+                      <span className="choice-item__title">双击 / 三击选中后自动翻译</span>
+                      <span className="choice-item__hint">
+                        双击单词或三击整段后自动翻译，适合基于选区的操作方式。
+                      </span>
+                    </label>
+                    <label className="choice-item">
+                      <input
+                        type="radio"
+                        name="autoTranslateMode"
+                        value="hover"
+                        checked={settings.ollamaAutoTranslateMode === "hover"}
+                        onChange={() =>
+                          updateSettings({ ollamaAutoTranslateMode: "hover" }, "now")
+                        }
+                      />
+                      <span className="choice-item__title">悬停自动翻译</span>
+                      <span className="choice-item__hint">
+                        鼠标移动到文本上后自动取词或取整段，无需双击或按快捷键。
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="field" hidden={settings.ollamaAutoTranslateMode !== "hover"}>
+                  <label htmlFor="hoverTranslateScope">悬停翻译范围</label>
+                  <select
+                    id="hoverTranslateScope"
+                    className="select"
+                    value={settings.ollamaHoverTranslateScope}
                     onChange={(event) =>
                       updateSettings(
-                        { ollamaLearningModeEnabled: event.target.checked },
+                        { ollamaHoverTranslateScope: event.target.value },
                         "now",
                       )
                     }
-                  />
-                  <span>启用学习模式</span>
-                </label>
-                <span className="hint">
-                  开启后，翻译完成的 tip 弹窗会追加主句结构、句法拆分和学习说明。默认关闭，以减少额外分析带来的等待时间。
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="options-tabs__panel" hidden={activeTab !== "about"}>
-            <div className="card update-card">
-              <h2>关于 Ollama 翻译</h2>
-              <div className="update-status-card">
-                <div className="update-status-card__row">
-                  <span className="update-status-card__label">当前版本</span>
-                  <span className="update-status-card__value">{currentVersion}</span>
-                </div>
-                <div className="update-status-card__row">
-                  <span className="update-status-card__label">更新状态</span>
-                  <span
-                    className={`update-status-card__value update-status-card__value--${updateState.status}`.trim()}
                   >
-                    {updateSummaryText}
+                    <option value="word">只翻译单词</option>
+                    <option value="paragraph">翻译整段话</option>
+                  </select>
+                  <span className="hint">
+                    悬停模式下，决定自动发送给 Ollama 的文本范围。
                   </span>
                 </div>
-                {updateCheckedAtText ? (
-                  <div className="update-status-card__row">
-                    <span className="update-status-card__label">最近检查</span>
-                    <span className="update-status-card__value">{updateCheckedAtText}</span>
-                  </div>
-                ) : null}
-                {updateState.notes ? (
-                  <div className="update-status-card__notes">{updateState.notes}</div>
-                ) : null}
-              </div>
 
-              <div className="update-actions">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={runExtensionUpdateCheck}
-                >
-                  立即检查
-                </button>
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={openUpdatePage}
-                  disabled={updateState.status !== "available" || !updateState.updateUrl}
-                >
-                  打开更新页面
-                </button>
+                <div className="field" hidden={settings.ollamaAutoTranslateMode !== "hover"}>
+                  <label htmlFor="hoverTranslateDelayMs">悬停延迟</label>
+                  <div className="input-with-suffix">
+                    <input
+                      id="hoverTranslateDelayMs"
+                      type="number"
+                      className="field-input field-input--number"
+                      min="0"
+                      max="5000"
+                      step="50"
+                      inputMode="numeric"
+                      value={settings.ollamaHoverTranslateDelayMs}
+                      onChange={(event) =>
+                        updateSettings(
+                          { ollamaHoverTranslateDelayMs: event.target.value },
+                          "debounced",
+                          { delay: 500 },
+                        )
+                      }
+                      onBlur={() => {
+                        const normalized = String(
+                          normalizeHoverTranslateDelayMs(
+                            settingsRef.current.ollamaHoverTranslateDelayMs,
+                          ),
+                        );
+                        const nextSettings = {
+                          ...settingsRef.current,
+                          ollamaHoverTranslateDelayMs: normalized,
+                        };
+                        settingsRef.current = nextSettings;
+                        setSettings(nextSettings);
+                        void persistSettings(nextSettings).catch((error) => {
+                          console.error("Save settings failed:", error);
+                          showAutoSaveStatus("自动保存失败", true);
+                        });
+                      }}
+                    />
+                    <span className="input-suffix">毫秒</span>
+                  </div>
+                  <span className="hint">
+                    鼠标停留多久后开始自动翻译，默认 200 毫秒。
+                  </span>
+                </div>
+
+                <ShortcutsList
+                  commands={shortcuts}
+                  supportsCommands={!!chrome.commands?.getAll}
+                />
+                <div className="shortcuts-actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={openShortcutsPage}
+                  >
+                    打开浏览器快捷键设置
+                  </button>
+                  {showShortcutsHint ? (
+                    <span className="hint shortcuts-open-hint">
+                      若无法自动打开，请手动打开：扩展程序 → 键盘快捷方式（Chrome
+                      地址栏输入 <code>{SHORTCUTS_URL}</code>）
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <p className="shortcuts-hint">
+                使用方式：选中文字后按快捷键；或将鼠标悬停在单词上按快捷键；或右键
+                「Ollama 翻译选中内容」
+              </p>
+            </div>
+
+            <div className="options-tabs__panel" hidden={activeTab !== "learning"} key="learning">
+              <div className="card">
+                <h2>学习模式</h2>
+                <div className="field">
+                  <label className="checkbox-label" htmlFor="learningModeEnabled">
+                    <input
+                      id="learningModeEnabled"
+                      type="checkbox"
+                      checked={settings.ollamaLearningModeEnabled}
+                      onChange={(event) =>
+                        updateSettings(
+                          { ollamaLearningModeEnabled: event.target.checked },
+                          "now",
+                        )
+                      }
+                    />
+                    <span>启用学习模式</span>
+                  </label>
+                  <span className="hint">
+                    开启后，翻译完成的 tip 弹窗会追加主句结构、句法拆分和学习说明。默认关闭，以减少额外分析带来的等待时间。
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="options-tabs__panel" hidden={activeTab !== "about"} key="about">
+              <div className="card update-card">
+                <h2>关于 Ollama 翻译</h2>
+                <div className="update-status-card">
+                  <div className="update-status-card__row">
+                    <span className="update-status-card__label">当前版本</span>
+                    <span className="update-status-card__value">{currentVersion}</span>
+                  </div>
+                  <div className="update-status-card__row">
+                    <span className="update-status-card__label">更新状态</span>
+                    <span
+                      className={`update-status-card__value update-status-card__value--${updateState.status}`.trim()}
+                    >
+                      {updateSummaryText}
+                    </span>
+                  </div>
+                  {updateCheckedAtText ? (
+                    <div className="update-status-card__row">
+                      <span className="update-status-card__label">最近检查</span>
+                      <span className="update-status-card__value">{updateCheckedAtText}</span>
+                    </div>
+                  ) : null}
+                  {updateState.notes ? (
+                    <div className="update-status-card__notes">{updateState.notes}</div>
+                  ) : null}
+                </div>
+
+                <div className="update-actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={runExtensionUpdateCheck}
+                  >
+                    立即检查
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={openUpdatePage}
+                    disabled={updateState.status !== "available" || !updateState.updateUrl}
+                  >
+                    打开更新页面
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </main>
         <p className={`status ${status.isError ? "status--error" : ""}`.trim()}>
           {status.text}
         </p>

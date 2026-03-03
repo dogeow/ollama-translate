@@ -643,6 +643,8 @@ async function fillSentenceStudyTranslations(
 export async function analyzeSentenceStudy(base, model, original, translation) {
   const text = String(original || "").trim();
   if (!text || text.length > SENTENCE_STUDY_MAX_TEXT_LENGTH) return null;
+  // 单个单词不做句型分析
+  if (!/\s/.test(text)) return null;
   const targetSentence = getFirstSentence(text);
   if (!targetSentence) return null;
 

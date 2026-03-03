@@ -1,36 +1,23 @@
 import {
-  DEFAULT_AUTO_TRANSLATE_MODE,
-  DEFAULT_HOVER_TRANSLATE_DELAY_MS,
-  DEFAULT_HOVER_TRANSLATE_SCOPE,
   DEFAULT_OLLAMA_MODEL,
   DEFAULT_OLLAMA_URL,
   DEFAULT_TRANSLATE_TARGET_LANG,
   ORIGINS_PLATFORM_CONTENT,
 } from "./constants.js";
 
-export function formatModelSize(bytes) {
-  if (bytes == null || bytes === 0) return "";
-  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
-  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
-  if (bytes >= 1e3) return `${(bytes / 1e3).toFixed(1)} KB`;
-  return `${bytes} B`;
-}
+// 从共享模块导入
+import { formatModelSize } from "../../shared/model-utils.js";
+import {
+  normalizeAutoTranslateMode,
+  normalizeHoverTranslateScope,
+  normalizeHoverTranslateDelayMs,
+} from "../../shared/settings.js";
+import { generateCompletion } from "../../shared/ollama-api.js";
 
-export function normalizeAutoTranslateMode(mode, legacySelection = false) {
-  if (mode === "selection" || mode === "hover" || mode === "off") return mode;
-  return legacySelection ? "selection" : DEFAULT_AUTO_TRANSLATE_MODE;
-}
-
-export function normalizeHoverTranslateScope(scope) {
-  return scope === "paragraph" ? "paragraph" : DEFAULT_HOVER_TRANSLATE_SCOPE;
-}
-
-export function normalizeHoverTranslateDelayMs(value) {
-  if (value === "" || value == null) return DEFAULT_HOVER_TRANSLATE_DELAY_MS;
-  const number = Number(value);
-  if (!Number.isFinite(number)) return DEFAULT_HOVER_TRANSLATE_DELAY_MS;
-  return Math.min(5000, Math.max(0, Math.round(number)));
-}
+// 重新导出
+export { formatModelSize };
+export { normalizeAutoTranslateMode, normalizeHoverTranslateScope, normalizeHoverTranslateDelayMs };
+export { generateCompletion as runGenerateRequest };
 
 export function getSettingsSnapshot(settings) {
   const url = (settings.ollamaUrl.trim() || DEFAULT_OLLAMA_URL).replace(/\/$/, "");
@@ -110,18 +97,4 @@ export function formatShortcut(shortcut) {
     .replace(/^Ctrl\+/i, "Ctrl+")
     .replace(/^Command\+/i, "⌘+")
     .replace(/^MacCtrl\+/i, "Ctrl+");
-}
-
-export async function runGenerateRequest(base, model, prompt) {
-  const response = await fetch(`${base}/api/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model, prompt, stream: false }),
-  });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `HTTP ${response.status}`);
-  }
-  const data = await response.json();
-  return (data.response || "").trim();
 }

@@ -1,29 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { TARGET_LANG_LABELS } from "../constants.js";
-import { formatModelSize } from "../format.js";
-
-function getModelName(model) {
-  return typeof model === "string" ? model : model?.name || "";
-}
-
-function getModelDisplay(model) {
-  const name = getModelName(model);
-  if (!name) return "";
-  const size =
-    typeof model === "object" && model?.size != null ? formatModelSize(model.size) : "";
-  return size ? `${name} (${size})` : name;
-}
-
-function getErrorMessage(error) {
-  if (error === "403") {
-    return "Ollama 拒绝了扩展的请求（403）。请在终端设置 OLLAMA_ORIGINS 环境变量后重启 Ollama。";
-  }
-  return "无法连接 Ollama。请确认本机已启动 Ollama（终端运行 ollama serve）。";
-}
+import { getModelName, getModelDisplay } from "../../shared/model-utils.js";
+import { getOllamaErrorMessage } from "../../shared/ollama-errors.js";
 
 function SentenceStudyPlaceholder() {
   return (
-    <div className="ollama-tip-section ollama-tip-grammar-section">
+    <div className="ollama-tip-grammar-section">
       <div className="ollama-tip-label">句型学习</div>
       <div className="ollama-tip-loading">分析中...</div>
       <div className="ollama-tip-placeholder ollama-tip-placeholder--title"></div>
@@ -39,7 +21,7 @@ function SentenceStudySection({ sentenceStudy }) {
   }
 
   return (
-    <div className="ollama-tip-section ollama-tip-grammar-section">
+    <div className="ollama-tip-grammar-section">
       <div className="ollama-tip-label">句型学习</div>
       <div className="ollama-tip-grammar-pattern">
         主句结构：{sentenceStudy.pattern || "句型分析"}
@@ -85,7 +67,7 @@ function NeedModelSection({ result, onTranslateWithModel }) {
   }
 
   return (
-    <>
+    <div className="ollama-tip-body">
       <div className="ollama-tip-section">
         <div className="ollama-tip-label">请选择模型</div>
         <select
@@ -116,7 +98,7 @@ function NeedModelSection({ result, onTranslateWithModel }) {
       >
         {isSubmitting ? "翻译中..." : "翻译"}
       </button>
-    </>
+    </div>
   );
 }
 
@@ -146,16 +128,18 @@ export function TipView({ result, onClose, onTranslateWithModel }) {
   if (result.pending) {
     body = (
       <>
-        {modelLabel ? <div className="ollama-tip-model">{modelLabel}</div> : null}
-        <div className="ollama-tip-section">
-          <div className="ollama-tip-label">原文</div>
-          <div className="ollama-tip-text">{result.original || ""}</div>
-        </div>
-        <div className="ollama-tip-section">
-          <div className="ollama-tip-label">译文</div>
-          <div className="ollama-tip-loading">翻译中...</div>
-          <div className="ollama-tip-placeholder"></div>
-          <div className="ollama-tip-placeholder ollama-tip-placeholder--short"></div>
+        <div className="ollama-tip-body">
+          {modelLabel ? <div className="ollama-tip-model">{modelLabel}</div> : null}
+          <div className="ollama-tip-section">
+            <div className="ollama-tip-label">原文</div>
+            <div className="ollama-tip-text">{result.original || ""}</div>
+          </div>
+          <div className="ollama-tip-section">
+            <div className="ollama-tip-label">译文</div>
+            <div className="ollama-tip-loading">翻译中...</div>
+            <div className="ollama-tip-placeholder"></div>
+            <div className="ollama-tip-placeholder ollama-tip-placeholder--short"></div>
+          </div>
         </div>
         {result.learningModeEnabled ? <SentenceStudyPlaceholder /> : null}
       </>
@@ -164,15 +148,15 @@ export function TipView({ result, onClose, onTranslateWithModel }) {
     body = <NeedModelSection result={result} onTranslateWithModel={onTranslateWithModel} />;
   } else if (result.needModel && result.error) {
     body = (
-      <>
+      <div className="ollama-tip-body">
         <div className="ollama-tip-section">
-          <div className="ollama-tip-error">{getErrorMessage(result.error)}</div>
+          <div className="ollama-tip-error">{getOllamaErrorMessage(result.error)}</div>
         </div>
         <div className="ollama-tip-section">
           <div className="ollama-tip-label">原文</div>
           <div className="ollama-tip-text">{result.original || ""}</div>
         </div>
-      </>
+      </div>
     );
   } else {
     const shouldShowSentenceStudy =
@@ -180,21 +164,28 @@ export function TipView({ result, onClose, onTranslateWithModel }) {
 
     body = (
       <>
-        {modelLabel ? <div className="ollama-tip-model">{modelLabel}</div> : null}
-        {result.error ? (
+        <div className="ollama-tip-body">
+          {modelLabel ? <div className="ollama-tip-model">{modelLabel}</div> : null}
+          {result.error ? (
+            <div className="ollama-tip-section">
+              <div className="ollama-tip-error">{result.error}</div>
+            </div>
+          ) : null}
           <div className="ollama-tip-section">
-            <div className="ollama-tip-error">{result.error}</div>
+            <div className="ollama-tip-label">原文</div>
+            <div className="ollama-tip-text">{result.original || ""}</div>
           </div>
-        ) : null}
-        <div className="ollama-tip-section">
-          <div className="ollama-tip-label">原文</div>
-          <div className="ollama-tip-text">{result.original || ""}</div>
-        </div>
-        <div className="ollama-tip-section">
-          <div className="ollama-tip-label">译文</div>
-          <div className="ollama-tip-text">
-            {result.error ? "—" : result.translation || "（无译文）"}
+          <div className="ollama-tip-section">
+            <div className="ollama-tip-label">译文</div>
+            <div className="ollama-tip-text">
+              {result.error ? "—" : result.translation || "（无译文）"}
+            </div>
           </div>
+          {!result.error && result.translation ? (
+            <button type="button" className="ollama-tip-copy" onClick={() => void handleCopy()}>
+              {copyLabel}
+            </button>
+          ) : null}
         </div>
         {shouldShowSentenceStudy ? (
           result.sentenceStudyPending ? (
@@ -202,18 +193,13 @@ export function TipView({ result, onClose, onTranslateWithModel }) {
           ) : result.sentenceStudy ? (
             <SentenceStudySection sentenceStudy={result.sentenceStudy} />
           ) : (
-            <div className="ollama-tip-section ollama-tip-grammar-section">
+            <div className="ollama-tip-grammar-section">
               <div className="ollama-tip-label">句型学习</div>
               <div className="ollama-tip-grammar-empty">
                 句型学习未生成，可重试一次或更换模型。
               </div>
             </div>
           )
-        ) : null}
-        {!result.error && result.translation ? (
-          <button type="button" className="ollama-tip-copy" onClick={() => void handleCopy()}>
-            {copyLabel}
-          </button>
         ) : null}
       </>
     );
