@@ -45,6 +45,7 @@ export function PopupApp() {
   const [updateState, setUpdateState] = useState(createDefaultUpdateState(currentVersion));
   const [autoTranslateMode, setAutoTranslateMode] = useState(DEFAULT_AUTO_TRANSLATE_MODE);
   const [hoverTranslateScope, setHoverTranslateScope] = useState(DEFAULT_HOVER_TRANSLATE_SCOPE);
+  const [appEnabled, setAppEnabled] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -60,6 +61,7 @@ export function PopupApp() {
         ollamaAutoTranslateMode: DEFAULT_AUTO_TRANSLATE_MODE,
         ollamaAutoTranslateSelection: false,
         ollamaHoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
+        ollamaAppEnabled: true,
       },
       (value) => {
         setAutoTranslateMode(
@@ -71,6 +73,7 @@ export function PopupApp() {
         setHoverTranslateScope(
           normalizeHoverTranslateScope(value.ollamaHoverTranslateScope),
         );
+        setAppEnabled(value.ollamaAppEnabled);
       },
     );
   }, [currentVersion]);
@@ -78,6 +81,10 @@ export function PopupApp() {
   useEffect(() => {
     function handleStorageChanged(changes, areaName) {
       if (areaName !== "sync") return;
+
+      if ("ollamaAppEnabled" in changes) {
+        setAppEnabled(changes.ollamaAppEnabled.newValue);
+      }
 
       if ("ollamaAutoTranslateMode" in changes || "ollamaAutoTranslateSelection" in changes) {
         chrome.storage.sync.get(
@@ -139,6 +146,11 @@ export function PopupApp() {
     updateSyncSettings({ ollamaHoverTranslateScope: scope });
   }
 
+  function handleAppToggle() {
+    setAppEnabled(!appEnabled);
+    updateSyncSettings({ ollamaAppEnabled: !appEnabled });
+  }
+
   return (
     <div className="popup">
       <div className="popup-hero">
@@ -186,6 +198,27 @@ export function PopupApp() {
               <div className="popup-choice-card__hint">{option.hint}</div>
             </button>
           ))}
+        </div>
+      </section>
+      <section className="popup-panel popup-panel--subtle">
+        <div className="popup-panel__header">
+          <div>
+            <div className="popup-panel__title">应用开关</div>
+            <div className="popup-panel__hint">暂时关闭应用，不影响设置。</div>
+          </div>
+          {isSaving ? <div className="popup-status">已保存中</div> : null}
+        </div>
+        <div className="popup-choice-grid popup-choice-grid--compact">
+          <button
+            type="button"
+            className={`popup-choice-card popup-choice-card--compact${
+              appEnabled ? " is-active" : ""
+            }`}
+            onClick={handleAppToggle}
+          >
+            <div className="popup-choice-card__title">{appEnabled ? "开启应用" : "关闭应用"}</div>
+            <div className="popup-choice-card__hint">{appEnabled ? "启用所有功能" : "暂时禁用扩展"}</div>
+          </button>
         </div>
       </section>
       {autoTranslateMode === "hover" ? (

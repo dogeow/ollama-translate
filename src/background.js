@@ -21,6 +21,7 @@ const DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434";
 const DEFAULT_OLLAMA_MODEL = "";
 const DEFAULT_TRANSLATE_TARGET_LANG = "Chinese";
 const DEFAULT_LEARNING_MODE_ENABLED = false;
+const DEFAULT_APP_ENABLED = true;
 const TRANSLATE_RESULT_KEY = "ollamaTranslateResult";
 const LOG_PREFIX = "[Ollama 翻译]";
 const MENU_TRANSLATE_SELECTION = "ollama-translate";
@@ -85,6 +86,7 @@ async function readMenuSettings() {
     ollamaAutoTranslateMode: "off",
     ollamaAutoTranslateSelection: false,
     ollamaHoverTranslateScope: "word",
+    ollamaAppEnabled: DEFAULT_APP_ENABLED,
   });
 
   return {
@@ -93,6 +95,7 @@ async function readMenuSettings() {
       stored.ollamaAutoTranslateSelection,
     ),
     hoverTranslateScope: normalizeHoverTranslateScope(stored.ollamaHoverTranslateScope),
+    appEnabled: stored.ollamaAppEnabled,
   };
 }
 
@@ -335,6 +338,7 @@ async function translateWithOllama(text, tabId = null, options = {}) {
     ollamaModel: DEFAULT_OLLAMA_MODEL,
     ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
     ollamaLearningModeEnabled: DEFAULT_LEARNING_MODE_ENABLED,
+    ollamaAppEnabled: DEFAULT_APP_ENABLED,
   });
   const {
     showPending = false,
@@ -342,6 +346,23 @@ async function translateWithOllama(text, tabId = null, options = {}) {
     triggerSource = undefined,
   } = options;
   const resolvedRequestId = createTranslateRequestId(requestId);
+
+  if (!ollamaAppEnabled) {
+    const errorResult = {
+      original: text,
+      translation: null,
+      error: "app_disabled",
+      targetLang: ollamaTranslateTargetLang || DEFAULT_TRANSLATE_TARGET_LANG,
+      model: ollamaModel,
+      learningModeEnabled: !!ollamaLearningModeEnabled,
+      sentenceStudy: null,
+      sentenceStudyPending: false,
+      requestId: resolvedRequestId,
+      triggerSource,
+    };
+    await persistTranslateResult(errorResult);
+    return errorResult;
+  }
 
   if (showPending && tabId) {
     await sendTranslatePending(
@@ -624,7 +645,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (
     !("ollamaAutoTranslateMode" in changes) &&
     !("ollamaAutoTranslateSelection" in changes) &&
-    !("ollamaHoverTranslateScope" in changes)
+    !("ollamaHoverTranslateScope" in changes) &&
+    !("ollamaAppEnabled" in changes)
   ) {
     return;
   }

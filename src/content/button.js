@@ -17,7 +17,6 @@ export function getButtonElement() {
 }
 
 export function showButton(text) {
-  if (!text) return null;
   const btn = getButtonElement();
   const rect = getSelectionRect();
   if (!rect) return null;
@@ -38,4 +37,27 @@ export function hideButton() {
 export function getButtonOrSelectionText() {
   const btn = document.getElementById(BUTTON_ID);
   return (btn && btn.dataset.text) || getSelectionText();
+}
+
+/** 检查应用是否启用 */
+export function isAppEnabled() {
+  return chrome.storage.sync.get("ollamaAppEnabled").then((value) => {
+    return value.ollamaAppEnabled !== false;
+  }).catch(() => true);
+}
+
+/** 显示按钮前检查应用是否启用 */
+export function showButtonIfEnabled(text) {
+  return isAppEnabled().then((enabled) => {
+    if (!enabled) return null;
+    return showButton(text);
+  });
+}
+
+/** 隐藏按钮前检查应用是否启用 */
+export function hideButtonIfEnabled() {
+  return isAppEnabled().then((enabled) => {
+    if (!enabled) return;
+    hideButton();
+  });
 }

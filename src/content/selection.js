@@ -233,3 +233,10 @@ export function getElementRect(el) {
     right: rect.right,
   };
 }
+
+/** 检查应用是否启用 */
+export function isAppEnabled() {
+  return chrome.storage.sync.get("ollamaAppEnabled").then((value) => {
+    return value.ollamaAppEnabled !== false;
+  }).catch(() => true);
+}
