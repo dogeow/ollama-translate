@@ -296,6 +296,47 @@ export function injectStyles() {
     margin-top: 2px;
 }
 
+#${TIP_ID} .ollama-tip-text--streaming {
+    position: relative;
+    margin-top: 8px;
+}
+
+#${TIP_ID} .ollama-tip-streaming-cursor {
+    display: inline-block;
+    width: 7px;
+    height: 1.1em;
+    margin-left: 2px;
+    border-radius: 999px;
+    background: var(--ollama-accent);
+    vertical-align: text-bottom;
+    animation: ollama-tip-caret-blink 1s ease-in-out infinite;
+}
+
+#${TIP_ID} .ollama-tip-thinking {
+    margin-top: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--ollama-border-soft);
+    border-radius: 10px;
+    background: var(--ollama-panel);
+}
+
+#${TIP_ID} .ollama-tip-thinking-label {
+    color: var(--ollama-text-muted);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+#${TIP_ID} .ollama-tip-thinking-content {
+    margin-top: 6px;
+    color: var(--ollama-text-secondary);
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 #${TIP_ID} .ollama-tip-placeholder {
     height: 10px;
     margin-top: 8px;
@@ -469,6 +510,11 @@ export function injectStyles() {
 @keyframes ollama-tip-loading {
     0%   { background-position: 200% 0; }
     100% { background-position: -200% 0; }
+}
+
+@keyframes ollama-tip-caret-blink {
+    0%, 45% { opacity: 1; }
+    55%, 100% { opacity: 0.18; }
 }
 `;
   (document.head || document.documentElement).appendChild(style);

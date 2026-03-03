@@ -24,12 +24,16 @@ function initContentScript() {
   const DEFAULT_AUTO_TRANSLATE_MODE = "off";
   const DEFAULT_HOVER_TRANSLATE_SCOPE = "word";
   const DEFAULT_HOVER_TRANSLATE_DELAY_MS = 200;
+  const DEFAULT_TRANSLATE_TARGET_LANG = "Chinese";
+  const HAN_CHAR_RE = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u;
+  const SIGNIFICANT_CHAR_RE = /[\p{L}\p{N}]/u;
 
   let lastTipRect = null;
   let lastMouseX = 0;
   let lastMouseY = 0;
   let lastTranslatedElement = null;
   let autoTranslateMode = DEFAULT_AUTO_TRANSLATE_MODE;
+  let translateTargetLang = DEFAULT_TRANSLATE_TARGET_LANG;
   let hoverTranslateScope = DEFAULT_HOVER_TRANSLATE_SCOPE;
   let hoverTranslateDelayMs = DEFAULT_HOVER_TRANSLATE_DELAY_MS;
   let selectionAutoTranslateTimerId = null;
@@ -63,11 +67,42 @@ function initContentScript() {
     return Math.min(5000, Math.max(0, Math.round(n)));
   }
 
+  function isMostlyChineseText(text) {
+    const value = String(text || "").trim();
+    if (!value) return false;
+
+    const significantChars = Array.from(value).filter((char) =>
+      SIGNIFICANT_CHAR_RE.test(char),
+    );
+    if (significantChars.length === 0) return false;
+
+    let hanCount = 0;
+    for (const char of significantChars) {
+      if (HAN_CHAR_RE.test(char)) {
+        hanCount += 1;
+      }
+    }
+
+    if (hanCount === 0) return false;
+    if (significantChars.length <= 4 && hanCount === significantChars.length) {
+      return true;
+    }
+
+    return hanCount / significantChars.length >= 0.6;
+  }
+
+  function shouldSkipHoverTranslate(text) {
+    if (translateTargetLang !== "Chinese") return false;
+    return isMostlyChineseText(text);
+  }
+
   function applyAutoTranslateSettings(cfg) {
     autoTranslateMode = normalizeAutoTranslateMode(
       cfg.ollamaAutoTranslateMode,
       cfg.ollamaAutoTranslateSelection,
     );
+    translateTargetLang =
+      cfg.ollamaTranslateTargetLang || DEFAULT_TRANSLATE_TARGET_LANG;
     hoverTranslateScope = normalizeHoverTranslateScope(
       cfg.ollamaHoverTranslateScope,
     );
@@ -83,6 +118,7 @@ function initContentScript() {
     {
       ollamaAutoTranslateMode: DEFAULT_AUTO_TRANSLATE_MODE,
       ollamaAutoTranslateSelection: false,
+      ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
       ollamaHoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
       ollamaHoverTranslateDelayMs: DEFAULT_HOVER_TRANSLATE_DELAY_MS,
     },
@@ -94,6 +130,7 @@ function initContentScript() {
     if (
       !("ollamaAutoTranslateMode" in changes) &&
       !("ollamaAutoTranslateSelection" in changes) &&
+      !("ollamaTranslateTargetLang" in changes) &&
       !("ollamaHoverTranslateScope" in changes) &&
       !("ollamaHoverTranslateDelayMs" in changes)
     ) {
@@ -103,6 +140,7 @@ function initContentScript() {
       {
         ollamaAutoTranslateMode: DEFAULT_AUTO_TRANSLATE_MODE,
         ollamaAutoTranslateSelection: false,
+        ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
         ollamaHoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
         ollamaHoverTranslateDelayMs: DEFAULT_HOVER_TRANSLATE_DELAY_MS,
       },
@@ -269,6 +307,8 @@ function initContentScript() {
   function onMouseUp(e) {
     if (e.button !== 0) return;
     const clickCount = e.detail || 1;
+    const clientX = e.clientX;
+    const clientY = e.clientY;
 
     // 保持原有选区变化逻辑（用于非自动模式下的按钮）
     setTimeout(onSelectionChange, 10);
@@ -280,11 +320,26 @@ function initContentScript() {
     clearSelectionAutoTranslateTimer();
     selectionAutoTranslateTimerId = window.setTimeout(() => {
       selectionAutoTranslateTimerId = null;
-      const text = getSelectionText();
-      const trimmed = text.trim();
-      if (!trimmed) return;
-      lastTipRect = getSelectionRect() || lastTipRect;
-      chrome.runtime.sendMessage({ action: "translate", text: trimmed }, () => {
+      let text = getSelectionText().trim();
+      let anchorRect = getSelectionRect() || lastTipRect;
+      let translatedElement = null;
+
+      // 一些页面使用 user-select: none，双击/三击不会形成真实选区。
+      if (!text) {
+        const fallbackScope = clickCount >= 3 ? "paragraph" : "word";
+        const hoverTarget = getHoverTranslateTarget(clientX, clientY, fallbackScope);
+        if (!hoverTarget?.text?.trim()) return;
+        text = hoverTarget.text.trim();
+        anchorRect = hoverTarget.rect || anchorRect;
+        translatedElement = hoverTarget.element || null;
+      }
+
+      if (!text) return;
+      lastTipRect = anchorRect || lastTipRect;
+      if (translatedElement) {
+        lastTranslatedElement = translatedElement;
+      }
+      chrome.runtime.sendMessage({ action: "translate", text }, () => {
         if (chrome.runtime.lastError) {
           console.warn("Ollama 自动翻译:", chrome.runtime.lastError.message);
         }
@@ -315,8 +370,23 @@ function initContentScript() {
       hoverTranslateScope,
     );
     const key = hoverTarget?.key || "";
-    if (!key || !(hoverTarget?.text || "").trim()) {
+    const hoverText = (hoverTarget?.text || "").trim();
+    if (!key || !hoverText) {
       clearHoverAutoTranslateTimer({ preserveLastResolved: true });
+      return;
+    }
+
+    if (shouldSkipHoverTranslate(hoverText)) {
+      if (hoverAutoTranslateTimerId !== null) {
+        clearTimeout(hoverAutoTranslateTimerId);
+        hoverAutoTranslateTimerId = null;
+      }
+      if (key !== hoverCurrentKey) {
+        hoverCurrentKey = key;
+      }
+      hoverPendingKey = "";
+      hoverInFlightKey = "";
+      activeHoverRequestId = "";
       return;
     }
 
@@ -362,7 +432,7 @@ function initContentScript() {
       chrome.runtime.sendMessage(
         {
           action: "translate",
-          text: hoverTarget.text.trim(),
+          text: hoverText,
           triggerSource: "hover",
           requestId,
         },

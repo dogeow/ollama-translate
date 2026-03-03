@@ -15,6 +15,36 @@ function SentenceStudyPlaceholder() {
   );
 }
 
+function PendingTranslationSection({ result }) {
+  const hasThinking = !!String(result.thinking || "").trim();
+  const hasTranslation = !!String(result.translation || "").trim();
+  const loadingLabel = hasTranslation ? "生成中..." : hasThinking ? "思考中..." : "翻译中...";
+
+  return (
+    <div className="ollama-tip-section">
+      <div className="ollama-tip-label">译文</div>
+      <div className="ollama-tip-loading">{loadingLabel}</div>
+      {hasThinking ? (
+        <div className="ollama-tip-thinking">
+          <div className="ollama-tip-thinking-label">思考过程</div>
+          <div className="ollama-tip-thinking-content">{result.thinking}</div>
+        </div>
+      ) : null}
+      {hasTranslation ? (
+        <div className="ollama-tip-text ollama-tip-text--streaming">
+          {result.translation}
+          <span className="ollama-tip-streaming-cursor" aria-hidden="true"></span>
+        </div>
+      ) : (
+        <>
+          <div className="ollama-tip-placeholder"></div>
+          <div className="ollama-tip-placeholder ollama-tip-placeholder--short"></div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function SentenceStudySection({ sentenceStudy }) {
   if (!sentenceStudy || !Array.isArray(sentenceStudy.parts) || sentenceStudy.parts.length === 0) {
     return null;
@@ -134,12 +164,7 @@ export function TipView({ result, onClose, onTranslateWithModel }) {
             <div className="ollama-tip-label">原文</div>
             <div className="ollama-tip-text">{result.original || ""}</div>
           </div>
-          <div className="ollama-tip-section">
-            <div className="ollama-tip-label">译文</div>
-            <div className="ollama-tip-loading">翻译中...</div>
-            <div className="ollama-tip-placeholder"></div>
-            <div className="ollama-tip-placeholder ollama-tip-placeholder--short"></div>
-          </div>
+          <PendingTranslationSection result={result} />
         </div>
         {result.learningModeEnabled ? <SentenceStudyPlaceholder /> : null}
       </>

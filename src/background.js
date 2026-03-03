@@ -1,4 +1,7 @@
-import { checkOllamaAndGetModels, generateOllamaResponse } from "./background/ollama.js";
+import {
+  checkOllamaAndGetModels,
+  generateOllamaStreamingResponse,
+} from "./background/ollama.js";
 import { analyzeSentenceStudy } from "./background/sentenceStudy.js";
 import {
   compareExtensionVersions,
@@ -9,6 +12,10 @@ import {
   UPDATE_MANIFEST_URL,
   UPDATE_STATE_KEY,
 } from "./shared/update.js";
+import {
+  normalizeAutoTranslateMode,
+  normalizeHoverTranslateScope,
+} from "./shared/settings.js";
 
 const DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434";
 const DEFAULT_OLLAMA_MODEL = "";
@@ -16,6 +23,14 @@ const DEFAULT_TRANSLATE_TARGET_LANG = "Chinese";
 const DEFAULT_LEARNING_MODE_ENABLED = false;
 const TRANSLATE_RESULT_KEY = "ollamaTranslateResult";
 const LOG_PREFIX = "[Ollama 翻译]";
+const MENU_TRANSLATE_SELECTION = "ollama-translate";
+const MENU_AUTO_MODE_PARENT = "ollama-auto-translate-mode";
+const MENU_AUTO_MODE_OFF = "ollama-auto-translate-mode-off";
+const MENU_AUTO_MODE_SELECTION = "ollama-auto-translate-mode-selection";
+const MENU_AUTO_MODE_HOVER = "ollama-auto-translate-mode-hover";
+const MENU_HOVER_SCOPE_PARENT = "ollama-hover-translate-scope";
+const MENU_HOVER_SCOPE_WORD = "ollama-hover-translate-scope-word";
+const MENU_HOVER_SCOPE_PARAGRAPH = "ollama-hover-translate-scope-paragraph";
 
 async function sendTranslatePending(tabId, payload) {
   if (!tabId) return;
@@ -25,6 +40,28 @@ async function sendTranslatePending(tabId, payload) {
       ...payload,
     })
     .catch(() => {});
+}
+
+function buildPendingTranslatePayload({
+  text,
+  targetLang,
+  model,
+  learningModeEnabled,
+  requestId,
+  triggerSource,
+  translation = null,
+  thinking = null,
+}) {
+  return {
+    original: text,
+    targetLang,
+    model,
+    learningModeEnabled,
+    requestId,
+    triggerSource,
+    translation,
+    thinking,
+  };
 }
 
 async function sendTranslateResult(tabId, payload, action = "showTranslateResult") {
@@ -40,6 +77,91 @@ async function sendTranslateResult(tabId, payload, action = "showTranslateResult
 async function persistTranslateResult(result) {
   await chrome.storage.local.set({
     [TRANSLATE_RESULT_KEY]: result,
+  });
+}
+
+async function readMenuSettings() {
+  const stored = await chrome.storage.sync.get({
+    ollamaAutoTranslateMode: "off",
+    ollamaAutoTranslateSelection: false,
+    ollamaHoverTranslateScope: "word",
+  });
+
+  return {
+    autoTranslateMode: normalizeAutoTranslateMode(
+      stored.ollamaAutoTranslateMode,
+      stored.ollamaAutoTranslateSelection,
+    ),
+    hoverTranslateScope: normalizeHoverTranslateScope(stored.ollamaHoverTranslateScope),
+  };
+}
+
+async function createContextMenus() {
+  const { autoTranslateMode, hoverTranslateScope } = await readMenuSettings();
+
+  await chrome.contextMenus.removeAll();
+
+  chrome.contextMenus.create({
+    id: MENU_TRANSLATE_SELECTION,
+    title: "Ollama 翻译选中内容",
+    contexts: ["selection"],
+  });
+
+  chrome.contextMenus.create({
+    id: MENU_AUTO_MODE_PARENT,
+    title: "自动翻译模式",
+    contexts: ["action"],
+  });
+
+  chrome.contextMenus.create({
+    id: MENU_AUTO_MODE_OFF,
+    parentId: MENU_AUTO_MODE_PARENT,
+    title: "关闭自动翻译",
+    type: "radio",
+    checked: autoTranslateMode === "off",
+    contexts: ["action"],
+  });
+
+  chrome.contextMenus.create({
+    id: MENU_AUTO_MODE_SELECTION,
+    parentId: MENU_AUTO_MODE_PARENT,
+    title: "双击 / 三击后翻译",
+    type: "radio",
+    checked: autoTranslateMode === "selection",
+    contexts: ["action"],
+  });
+
+  chrome.contextMenus.create({
+    id: MENU_AUTO_MODE_HOVER,
+    parentId: MENU_AUTO_MODE_PARENT,
+    title: "悬停自动翻译",
+    type: "radio",
+    checked: autoTranslateMode === "hover",
+    contexts: ["action"],
+  });
+
+  chrome.contextMenus.create({
+    id: MENU_HOVER_SCOPE_PARENT,
+    title: "悬停取词范围",
+    contexts: ["action"],
+  });
+
+  chrome.contextMenus.create({
+    id: MENU_HOVER_SCOPE_WORD,
+    parentId: MENU_HOVER_SCOPE_PARENT,
+    title: "只翻译单词",
+    type: "radio",
+    checked: hoverTranslateScope === "word",
+    contexts: ["action"],
+  });
+
+  chrome.contextMenus.create({
+    id: MENU_HOVER_SCOPE_PARAGRAPH,
+    parentId: MENU_HOVER_SCOPE_PARENT,
+    title: "翻译整段话",
+    type: "radio",
+    checked: hoverTranslateScope === "paragraph",
+    contexts: ["action"],
   });
 }
 
@@ -222,13 +344,17 @@ async function translateWithOllama(text, tabId = null, options = {}) {
   const resolvedRequestId = createTranslateRequestId(requestId);
 
   if (showPending && tabId) {
-    await sendTranslatePending(tabId, {
-      original: text,
-      targetLang: ollamaTranslateTargetLang || DEFAULT_TRANSLATE_TARGET_LANG,
-      learningModeEnabled: !!ollamaLearningModeEnabled,
-      requestId: resolvedRequestId,
-      triggerSource,
-    });
+    await sendTranslatePending(
+      tabId,
+      buildPendingTranslatePayload({
+        text,
+        targetLang: ollamaTranslateTargetLang || DEFAULT_TRANSLATE_TARGET_LANG,
+        model: ollamaModel || null,
+        learningModeEnabled: !!ollamaLearningModeEnabled,
+        requestId: resolvedRequestId,
+        triggerSource,
+      }),
+    );
   }
 
   if (!ollamaModel) {
@@ -274,9 +400,43 @@ async function translateWithOllama(text, tabId = null, options = {}) {
   const prompt = `Translate the following text to ${targetLang}. Only output the translation, no explanation or extra text.\n\n${text}`;
 
   let translation = "";
+  let thinking = "";
   let error = null;
+  let lastPendingUpdateAt = 0;
+
+  async function sendPendingProgress(force = false) {
+    if (!showPending || !tabId) return;
+
+    const now = Date.now();
+    if (!force && now - lastPendingUpdateAt < 80) return;
+
+    lastPendingUpdateAt = now;
+    await sendTranslatePending(
+      tabId,
+      buildPendingTranslatePayload({
+        text,
+        targetLang,
+        model: ollamaModel,
+        learningModeEnabled: !!ollamaLearningModeEnabled,
+        requestId: resolvedRequestId,
+        triggerSource,
+        translation: translation || null,
+        thinking: thinking || null,
+      }),
+    );
+  }
+
   try {
-    translation = await generateOllamaResponse(base, ollamaModel, prompt);
+    const streamed = await generateOllamaStreamingResponse(base, ollamaModel, prompt, {
+      onChunk: (chunk) => {
+        translation = chunk.response || "";
+        thinking = chunk.thinking || "";
+        void sendPendingProgress();
+      },
+    });
+    translation = streamed.response || translation;
+    thinking = streamed.thinking || thinking;
+    await sendPendingProgress(true);
   } catch (e) {
     error = e.message || String(e);
     if (e.name === "TypeError" && (e.message || "").includes("fetch")) {
@@ -292,6 +452,7 @@ async function translateWithOllama(text, tabId = null, options = {}) {
     targetLang,
     model: ollamaModel,
     learningModeEnabled: !!ollamaLearningModeEnabled,
+    thinking: thinking || null,
     sentenceStudy: null,
     sentenceStudyPending: !error && !!translation && !!ollamaLearningModeEnabled,
     requestId: resolvedRequestId,
@@ -325,18 +486,13 @@ function openResultWindow() {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({
-      id: "ollama-translate",
-      title: "Ollama 翻译选中内容",
-      contexts: ["selection"],
-    });
-  });
+  void createContextMenus();
   void ensureUpdateCheckAlarm();
   void checkForExtensionUpdate();
 });
 
 chrome.runtime.onStartup?.addListener(() => {
+  void createContextMenus();
   void ensureUpdateCheckAlarm();
   void checkForExtensionUpdate();
 });
@@ -410,7 +566,37 @@ chrome.commands.onCommand.addListener(async (command) => {
 });
 
 chrome.contextMenus.onClicked.addListener(async (info) => {
-  if (info.menuItemId !== "ollama-translate" || !info.selectionText) return;
+  if (info.menuItemId === MENU_AUTO_MODE_OFF) {
+    await chrome.storage.sync.set({ ollamaAutoTranslateMode: "off" });
+    void createContextMenus();
+    return;
+  }
+
+  if (info.menuItemId === MENU_AUTO_MODE_SELECTION) {
+    await chrome.storage.sync.set({ ollamaAutoTranslateMode: "selection" });
+    void createContextMenus();
+    return;
+  }
+
+  if (info.menuItemId === MENU_AUTO_MODE_HOVER) {
+    await chrome.storage.sync.set({ ollamaAutoTranslateMode: "hover" });
+    void createContextMenus();
+    return;
+  }
+
+  if (info.menuItemId === MENU_HOVER_SCOPE_WORD) {
+    await chrome.storage.sync.set({ ollamaHoverTranslateScope: "word" });
+    void createContextMenus();
+    return;
+  }
+
+  if (info.menuItemId === MENU_HOVER_SCOPE_PARAGRAPH) {
+    await chrome.storage.sync.set({ ollamaHoverTranslateScope: "paragraph" });
+    void createContextMenus();
+    return;
+  }
+
+  if (info.menuItemId !== MENU_TRANSLATE_SELECTION || !info.selectionText) return;
   const text = info.selectionText.trim();
   const [tab] = await chrome.tabs.query({
     active: true,
@@ -431,6 +617,18 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
   } catch (_) {
     openResultWindow();
   }
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "sync") return;
+  if (
+    !("ollamaAutoTranslateMode" in changes) &&
+    !("ollamaAutoTranslateSelection" in changes) &&
+    !("ollamaHoverTranslateScope" in changes)
+  ) {
+    return;
+  }
+  void createContextMenus();
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
