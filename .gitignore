@@ -1,3 +1,4 @@
 node_modules/
 dist/
 .extension-dev-profile/
+.aider*

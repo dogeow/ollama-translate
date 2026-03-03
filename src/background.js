@@ -333,6 +333,7 @@ async function translateWithOllama(text, tabId = null, options = {}) {
     ollamaModel = DEFAULT_OLLAMA_MODEL,
     ollamaTranslateTargetLang = DEFAULT_TRANSLATE_TARGET_LANG,
     ollamaLearningModeEnabled = DEFAULT_LEARNING_MODE_ENABLED,
+    ollamaAppEnabled = DEFAULT_APP_ENABLED,
   } = await chrome.storage.sync.get({
     ollamaUrl: DEFAULT_OLLAMA_URL,
     ollamaModel: DEFAULT_OLLAMA_MODEL,
@@ -348,20 +349,8 @@ async function translateWithOllama(text, tabId = null, options = {}) {
   const resolvedRequestId = createTranslateRequestId(requestId);
 
   if (!ollamaAppEnabled) {
-    const errorResult = {
-      original: text,
-      translation: null,
-      error: "app_disabled",
-      targetLang: ollamaTranslateTargetLang || DEFAULT_TRANSLATE_TARGET_LANG,
-      model: ollamaModel,
-      learningModeEnabled: !!ollamaLearningModeEnabled,
-      sentenceStudy: null,
-      sentenceStudyPending: false,
-      requestId: resolvedRequestId,
-      triggerSource,
-    };
-    await persistTranslateResult(errorResult);
-    return errorResult;
+    console.log(LOG_PREFIX, "应用已禁用，静默忽略翻译请求:", text.substring(0, 30));
+    return null;
   }
 
   if (showPending && tabId) {
@@ -579,6 +568,10 @@ chrome.commands.onCommand.addListener(async (command) => {
     const result = await translateWithOllama(text, tab.id, {
       showPending: true,
     });
+    if (!result) {
+      // 应用已禁用，静默返回
+      return;
+    }
     await sendTranslateResult(tab.id, result);
     console.log(LOG_PREFIX, "showTranslateResult sent");
   } catch (e) {
@@ -628,6 +621,10 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
     const result = await translateWithOllama(text, tabId, {
       showPending: true,
     });
+    if (!result) {
+      // 应用已禁用，静默返回
+      return;
+    }
     if (tabId) {
       try {
         await sendTranslateResult(tabId, result);
@@ -635,9 +632,7 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
       } catch (_) {}
     }
     openResultWindow();
-  } catch (_) {
-    openResultWindow();
-  }
+  } catch (_) {}
 });
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -682,6 +677,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     triggerSource,
   })
     .then((result) => {
+      if (!result) {
+        // 应用已禁用，静默返回
+        sendResponse({ ok: true, disabled: true });
+        return;
+      }
       const responsePayload = {
         ok: !result.error && !result.needModel,
         needModel: result.needModel,

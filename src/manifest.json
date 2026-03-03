@@ -32,6 +32,7 @@
   ],
   "permissions": ["storage", "contextMenus", "tabs", "scripting", "activeTab", "alarms"],
   "host_permissions": [
+    "<all_urls>",
     "http://localhost:11434/*",
     "http://127.0.0.1:11434/*",
     "https://raw.githubusercontent.com/dogeow/ollama-translate/*"

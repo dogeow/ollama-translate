@@ -73,7 +73,7 @@ export function PopupApp() {
         setHoverTranslateScope(
           normalizeHoverTranslateScope(value.ollamaHoverTranslateScope),
         );
-        setAppEnabled(value.ollamaAppEnabled);
+        setAppEnabled(value.ollamaAppEnabled !== false);
       },
     );
   }, [currentVersion]);
@@ -83,7 +83,7 @@ export function PopupApp() {
       if (areaName !== "sync") return;
 
       if ("ollamaAppEnabled" in changes) {
-        setAppEnabled(changes.ollamaAppEnabled.newValue);
+        setAppEnabled(changes.ollamaAppEnabled.newValue !== false);
       }
 
       if ("ollamaAutoTranslateMode" in changes || "ollamaAutoTranslateSelection" in changes) {
@@ -147,15 +147,33 @@ export function PopupApp() {
   }
 
   function handleAppToggle() {
-    setAppEnabled(!appEnabled);
-    updateSyncSettings({ ollamaAppEnabled: !appEnabled });
+    setAppEnabled((prev) => {
+      const next = !prev;
+      updateSyncSettings({ ollamaAppEnabled: next });
+      return next;
+    });
   }
 
   return (
     <div className="popup">
       <div className="popup-hero">
         <div className="popup-hero__top">
-          <h1>Ollama 翻译</h1>
+          <div className="popup-hero__title-group">
+            <h1>Ollama 翻译</h1>
+            <button
+              type="button"
+              className={`popup-app-toggle${appEnabled ? " is-active" : ""}`}
+              onClick={handleAppToggle}
+              aria-pressed={appEnabled}
+              aria-label={appEnabled ? "关闭应用" : "开启应用"}
+              title={appEnabled ? "关闭应用" : "开启应用"}
+            >
+              <span className="popup-app-toggle__track" aria-hidden="true">
+                <span className="popup-app-toggle__thumb" />
+              </span>
+              <span className="popup-app-toggle__text">{appEnabled ? "已开启" : "已关闭"}</span>
+            </button>
+          </div>
           <button type="button" className="btn btn-secondary btn-inline" onClick={openOptionsPage}>
             打开设置
           </button>
@@ -198,27 +216,6 @@ export function PopupApp() {
               <div className="popup-choice-card__hint">{option.hint}</div>
             </button>
           ))}
-        </div>
-      </section>
-      <section className="popup-panel popup-panel--subtle">
-        <div className="popup-panel__header">
-          <div>
-            <div className="popup-panel__title">应用开关</div>
-            <div className="popup-panel__hint">暂时关闭应用，不影响设置。</div>
-          </div>
-          {isSaving ? <div className="popup-status">已保存中</div> : null}
-        </div>
-        <div className="popup-choice-grid popup-choice-grid--compact">
-          <button
-            type="button"
-            className={`popup-choice-card popup-choice-card--compact${
-              appEnabled ? " is-active" : ""
-            }`}
-            onClick={handleAppToggle}
-          >
-            <div className="popup-choice-card__title">{appEnabled ? "开启应用" : "关闭应用"}</div>
-            <div className="popup-choice-card__hint">{appEnabled ? "启用所有功能" : "暂时禁用扩展"}</div>
-          </button>
         </div>
       </section>
       {autoTranslateMode === "hover" ? (

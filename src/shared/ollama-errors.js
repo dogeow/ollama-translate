@@ -15,6 +15,7 @@ export const OLLAMA_ERROR_MESSAGES = {
     "无法连接 Ollama。请确认本机已安装并启动 Ollama（终端运行 ollama serve），且扩展设置中地址为 http://127.0.0.1:11434",
   timeout: "请求超时，请稍后再试。",
   no_model: "请先选择一个模型。",
+  app_disabled: "应用已关闭，请在扩展弹窗中重新开启应用。",
 };
 
 /**
@@ -44,6 +45,10 @@ export function getOllamaErrorMessage(error, options = {}) {
 
   if (errorCode === "no_model") {
     return OLLAMA_ERROR_MESSAGES["no_model"];
+  }
+
+  if (errorCode === "app_disabled") {
+    return OLLAMA_ERROR_MESSAGES["app_disabled"];
   }
 
   // 返回原始错误消息

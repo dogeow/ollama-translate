@@ -19,6 +19,27 @@ import {
 import { showTip, hideTip } from "./content/tip.js";
 import { showShortcutHint } from "./content/shortcutHint.js";
 
+const CONTENT_STATE_KEY = "__OLLAMA_TRANSLATE_CONTENT_STATE__";
+const LOG_PREFIX = "[Ollama 翻译-Content]";
+
+function logDebug(...args) {
+  console.log(LOG_PREFIX, ...args);
+}
+
+function sendMessageSafe(msg, callback) {
+  try {
+    chrome.runtime.sendMessage(msg, callback);
+  } catch (e) {
+    logDebug("sendMessage 失败:", e.message, "msg:", msg.action);
+    if (e.message && e.message.includes("Extension context invalidated")) {
+      logDebug("检测到 Extension context 失效，需要刷新页面以重新连接扩展");
+    }
+    if (callback) {
+      callback();
+    }
+  }
+}
+
 function initContentScript() {
   const SELECTION_AUTO_TRANSLATE_DELAY_MS = 220;
   const DEFAULT_AUTO_TRANSLATE_MODE = "off";
@@ -185,21 +206,22 @@ function initContentScript() {
     hideButton();
     if (window.getSelection()) window.getSelection().removeAllRanges();
     if (text) {
-      chrome.runtime.sendMessage({ action: "translate", text }, () => {
+      sendMessageSafe({ action: "translate", text }, () => {
         if (chrome.runtime.lastError) {
-          console.warn("Ollama 翻译:", chrome.runtime.lastError.message);
+          logDebug("按钮点击翻译失败:", chrome.runtime.lastError.message);
         }
       });
     }
   }
 
   const btn = getButtonElement();
-  if (!btn._clickBound) {
-    btn._clickBound = true;
-    btn.addEventListener("click", onButtonClick);
+  if (btn._ollamaClickHandler) {
+    btn.removeEventListener("click", btn._ollamaClickHandler);
   }
+  btn._ollamaClickHandler = onButtonClick;
+  btn.addEventListener("click", onButtonClick);
 
-  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  function onRuntimeMessage(msg, _sender, sendResponse) {
     if (msg.action === "showTranslatePending") {
       if (msg.triggerSource === "hover" && msg.requestId) {
         if (msg.requestId !== activeHoverRequestId) return;
@@ -207,6 +229,7 @@ function initContentScript() {
       activeTipRequestId = msg.requestId || "";
       showTip({ ...msg, pending: true }, lastTipRect);
     } else if (msg.action === "showTranslateResult") {
+      console.log(logDebug("收到 showTranslateResult 消息，错误状态:", msg.error));
       if (msg.triggerSource === "hover" && msg.requestId) {
         if (msg.requestId !== activeHoverRequestId) return;
         hoverLastResolvedKey = hoverCurrentKey || hoverLastResolvedKey;
@@ -215,6 +238,7 @@ function initContentScript() {
         lastCompletedHoverRequestId = msg.requestId;
       }
       activeTipRequestId = msg.requestId || activeTipRequestId;
+      console.log(logDebug("调用 showTip 显示翻译结果，错误:", msg.error));
       showTip(msg, lastTipRect);
     } else if (msg.action === "updateSentenceStudy") {
       const tip = document.getElementById(TIP_ID);
@@ -288,7 +312,8 @@ function initContentScript() {
       });
       return true;
     }
-  });
+  }
+  chrome.runtime.onMessage.addListener(onRuntimeMessage);
 
   function onSelectionChange() {
     const text = getSelectionText();
@@ -339,9 +364,10 @@ function initContentScript() {
       if (translatedElement) {
         lastTranslatedElement = translatedElement;
       }
-      chrome.runtime.sendMessage({ action: "translate", text }, () => {
+      logDebug(`双击/三击触发翻译：text="${text.substring(0, 20)}..."`);
+      sendMessageSafe({ action: "translate", text }, () => {
         if (chrome.runtime.lastError) {
-          console.warn("Ollama 自动翻译:", chrome.runtime.lastError.message);
+          logDebug("双击/三击翻译请求失败:", chrome.runtime.lastError.message);
         }
       });
     }, SELECTION_AUTO_TRANSLATE_DELAY_MS);
@@ -411,10 +437,14 @@ function initContentScript() {
 
     hoverPendingKey = key;
     const requestId = `hover:${Date.now()}:${++hoverRequestSeq}`;
+    logDebug(`悬停触发：text="${hoverText.substring(0, 20)}...", requestId=${requestId}`);
     hoverAutoTranslateTimerId = window.setTimeout(() => {
       hoverAutoTranslateTimerId = null;
       hoverPendingKey = "";
-      if (autoTranslateMode !== "hover" || hoverCurrentKey !== key) return;
+      if (autoTranslateMode !== "hover" || hoverCurrentKey !== key) {
+        logDebug(`悬停已取消：mode=${autoTranslateMode}, currentKey=${hoverCurrentKey}, key=${key}`);
+        return;
+      }
 
       hoverInFlightKey = key;
       activeHoverRequestId = requestId;
@@ -429,40 +459,40 @@ function initContentScript() {
         height: 0,
       };
 
-      chrome.runtime.sendMessage(
+      logDebug(`发送悬停翻译请求：${requestId}`);
+      const hoverCallback = () => {
+        if (chrome.runtime.lastError) {
+          if (activeHoverRequestId === requestId) {
+            activeHoverRequestId = "";
+            hoverInFlightKey = "";
+          }
+          logDebug(
+            "悬停翻译请求失败:",
+            chrome.runtime.lastError.message,
+          );
+        }
+      };
+      sendMessageSafe(
         {
           action: "translate",
           text: hoverText,
           triggerSource: "hover",
           requestId,
         },
-        () => {
-          if (chrome.runtime.lastError) {
-            if (activeHoverRequestId === requestId) {
-              activeHoverRequestId = "";
-              hoverInFlightKey = "";
-            }
-            console.warn(
-              "Ollama 悬停自动翻译:",
-              chrome.runtime.lastError.message,
-            );
-          }
-        },
+        hoverCallback,
       );
     }, hoverTranslateDelayMs);
   }
 
+  function onSelectionChangedEvent() {
+    if (autoTranslateMode === "hover") {
+      clearHoverAutoTranslateTimer({ preserveLastResolved: true });
+    }
+    onSelectionChange();
+  }
+
   document.addEventListener("mouseup", onMouseUp, true);
-  document.addEventListener(
-    "selectionchange",
-    () => {
-      if (autoTranslateMode === "hover") {
-        clearHoverAutoTranslateTimer({ preserveLastResolved: true });
-      }
-      onSelectionChange();
-    },
-    true,
-  );
+  document.addEventListener("selectionchange", onSelectionChangedEvent, true);
   document.addEventListener("scroll", onScroll, true);
   document.addEventListener("mousemove", onMouseMove, true);
 
@@ -471,11 +501,49 @@ function initContentScript() {
     clearHoverAutoTranslateTimer();
     hideButton();
     hideTip();
+    chrome.runtime.onMessage.removeListener(onRuntimeMessage);
+    document.removeEventListener("mouseup", onMouseUp, true);
+    document.removeEventListener("selectionchange", onSelectionChangedEvent, true);
+    document.removeEventListener("scroll", onScroll, true);
+    document.removeEventListener("mousemove", onMouseMove, true);
+    if (btn._ollamaClickHandler) {
+      btn.removeEventListener("click", btn._ollamaClickHandler);
+      delete btn._ollamaClickHandler;
+    }
     const style = document.getElementById(STYLE_ID);
     if (style) style.remove();
   };
 }
 
 export default function main() {
-  return initContentScript();
+  logDebug("Content script 初始化开始...");
+  const prevState = globalThis[CONTENT_STATE_KEY];
+  if (prevState && typeof prevState.cleanup === "function") {
+    try {
+      logDebug("清理旧实例...");
+      prevState.cleanup();
+    } catch (e) {
+      logDebug("清理旧实例失败:", e.message);
+    }
+  }
+
+  logDebug("初始化新实例...");
+  const cleanup = initContentScript();
+  globalThis[CONTENT_STATE_KEY] = {
+    cleanup,
+  };
+  logDebug("Content script 初始化完成！");
+
+  return () => {
+    try {
+      if (typeof cleanup === "function") {
+        logDebug("执行 cleanup...");
+        cleanup();
+      }
+    } finally {
+      if (globalThis[CONTENT_STATE_KEY]?.cleanup === cleanup) {
+        delete globalThis[CONTENT_STATE_KEY];
+      }
+    }
+  };
 }

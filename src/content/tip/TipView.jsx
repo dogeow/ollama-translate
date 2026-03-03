@@ -193,7 +193,7 @@ export function TipView({ result, onClose, onTranslateWithModel }) {
           {modelLabel ? <div className="ollama-tip-model">{modelLabel}</div> : null}
           {result.error ? (
             <div className="ollama-tip-section">
-              <div className="ollama-tip-error">{result.error}</div>
+              <div className="ollama-tip-error">{getOllamaErrorMessage(result.error)}</div>
             </div>
           ) : null}
           <div className="ollama-tip-section">
