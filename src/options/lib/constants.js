@@ -1,26 +1,17 @@
-export const DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434";
-export const DEFAULT_OLLAMA_MODEL = "";
-export const DEFAULT_TRANSLATE_TARGET_LANG = "Chinese";
-export const DEFAULT_AUTO_TRANSLATE_MODE = "off";
-export const DEFAULT_HOVER_TRANSLATE_SCOPE = "word";
-export const DEFAULT_HOVER_TRANSLATE_DELAY_MS = 200;
-export const DEFAULT_LEARNING_MODE_ENABLED = false;
-export const TRANSLATE_RESULT_KEY = "ollamaTranslateResult";
-export const SHORTCUTS_URL = "chrome://extensions/shortcuts";
-
-export const LANG_OPTIONS = [
-  { value: "Chinese", label: "中文" },
-  { value: "English", label: "English" },
-  { value: "Japanese", label: "日本語" },
-  { value: "Korean", label: "한국어" },
-  { value: "French", label: "Français" },
-  { value: "German", label: "Deutsch" },
-  { value: "Spanish", label: "Español" },
-];
-
-export const TARGET_LANG_LABELS = Object.fromEntries(
-  LANG_OPTIONS.map((option) => [option.value, option.label]),
-);
+// 从共享模块重新导出，保持向后兼容
+export {
+  DEFAULT_OLLAMA_URL,
+  DEFAULT_OLLAMA_MODEL,
+  DEFAULT_TRANSLATE_TARGET_LANG,
+  DEFAULT_AUTO_TRANSLATE_MODE,
+  DEFAULT_HOVER_TRANSLATE_SCOPE,
+  DEFAULT_HOVER_TRANSLATE_DELAY_MS,
+  DEFAULT_LEARNING_MODE_ENABLED,
+  TRANSLATE_RESULT_KEY,
+  SHORTCUTS_URL,
+  LANG_OPTIONS,
+  TARGET_LANG_LABELS,
+} from "../../shared/constants.js";
 
 export const ORIGINS_PLATFORM_CONTENT = {
   macos: {

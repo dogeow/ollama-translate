@@ -16,13 +16,15 @@ import {
   normalizeAutoTranslateMode,
   normalizeHoverTranslateScope,
 } from "./shared/settings.js";
+import {
+  DEFAULT_OLLAMA_URL,
+  DEFAULT_OLLAMA_MODEL,
+  DEFAULT_TRANSLATE_TARGET_LANG,
+  DEFAULT_LEARNING_MODE_ENABLED,
+  DEFAULT_APP_ENABLED,
+  TRANSLATE_RESULT_KEY,
+} from "./shared/constants.js";
 
-const DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434";
-const DEFAULT_OLLAMA_MODEL = "";
-const DEFAULT_TRANSLATE_TARGET_LANG = "Chinese";
-const DEFAULT_LEARNING_MODE_ENABLED = false;
-const DEFAULT_APP_ENABLED = true;
-const TRANSLATE_RESULT_KEY = "ollamaTranslateResult";
 const LOG_PREFIX = "[Ollama 翻译]";
 const MENU_TRANSLATE_SELECTION = "ollama-translate";
 const MENU_AUTO_MODE_PARENT = "ollama-auto-translate-mode";

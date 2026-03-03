@@ -1,0 +1,106 @@
+import { LANG_OPTIONS } from "../../shared/constants.js";
+
+export function TranslateTestTab({
+  testInput,
+  setTestInput,
+  testSourceLang,
+  setTestSourceLang,
+  testTargetLang,
+  setTestTargetLang,
+  detectLangResult,
+  testTranslateHint,
+  testTranslateResult,
+  runDetectLanguage,
+  runTranslateTest,
+}) {
+  const testTranslateClassName =
+    testTranslateResult.tone === "error"
+      ? "test-result-block error"
+      : testTranslateResult.tone === "empty"
+        ? "test-result-block empty"
+        : "test-result-block";
+
+  return (
+    <div className="card card-translate-test">
+      <h2>翻译测试</h2>
+      <div className="field">
+        <label htmlFor="ollamaTestInput">要翻译的文本</label>
+        <textarea
+          id="ollamaTestInput"
+          className="textarea"
+          rows="3"
+          placeholder="输入要翻译的文本，点击下方按钮测试"
+          value={testInput}
+          onChange={(event) => setTestInput(event.target.value)}
+        ></textarea>
+      </div>
+      <div className="field translate-test-actions-wrap">
+        <div className="field translate-test-actions">
+          <label htmlFor="ollamaTestSourceLang" className="translate-test-actions__label">
+            输入语言
+          </label>
+          <div className="translate-test-actions__row">
+            <select
+              id="ollamaTestSourceLang"
+              className="select translate-test-actions__select"
+              value={testSourceLang}
+              onChange={(event) => setTestSourceLang(event.target.value)}
+            >
+              <option value="auto">自动识别</option>
+              {LANG_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <button type="button" className="btn btn-secondary" onClick={runDetectLanguage}>
+              识别语言
+            </button>
+            <span
+              className={`detect-lang-result ${detectLangResult.isError ? "error" : ""}`.trim()}
+              aria-live="polite"
+            >
+              {detectLangResult.text}
+            </span>
+          </div>
+        </div>
+
+        <div className="field translate-test-actions">
+          <label htmlFor="ollamaTestLang" className="translate-test-actions__label">
+            翻译为
+          </label>
+          <div className="translate-test-actions__row">
+            <select
+              id="ollamaTestLang"
+              className="select translate-test-actions__select"
+              value={testTargetLang}
+              onChange={(event) => setTestTargetLang(event.target.value)}
+            >
+              {LANG_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <button type="button" className="btn btn-secondary" onClick={runTranslateTest}>
+              测试翻译
+            </button>
+            <span
+              className={`detect-lang-result ${testTranslateHint.isError ? "error" : ""}`.trim()}
+              aria-live="polite"
+            >
+              {testTranslateHint.text}
+            </span>
+          </div>
+        </div>
+
+        <div className="field translate-test-actions translate-test-result-row">
+          <label className="translate-test-actions__label">翻译</label>
+          <div className={testTranslateClassName} aria-live="polite">
+            {testTranslateResult.text}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

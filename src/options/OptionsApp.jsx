@@ -1,198 +1,81 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { ConnectionStatusBanner } from "./components/ConnectionStatusBanner.jsx";
-import { ModelDropdown } from "./components/ModelDropdown.jsx";
 import { OriginsModal } from "./components/OriginsModal.jsx";
-import { ShortcutsList } from "./components/ShortcutsList.jsx";
 import { TranslateResultView } from "./components/TranslateResultView.jsx";
-import { useOutsideClick } from "./hooks/useOutsideClick.js";
-import { useTransientStatus } from "./hooks/useTransientStatus.js";
-import {
-  DEFAULT_AUTO_TRANSLATE_MODE,
-  DEFAULT_HOVER_TRANSLATE_DELAY_MS,
-  DEFAULT_HOVER_TRANSLATE_SCOPE,
-  DEFAULT_LEARNING_MODE_ENABLED,
-  DEFAULT_OLLAMA_MODEL,
-  DEFAULT_OLLAMA_URL,
-  DEFAULT_TRANSLATE_TARGET_LANG,
-  LANG_OPTIONS,
-  SHORTCUTS_URL,
-  TRANSLATE_RESULT_KEY,
-} from "./lib/constants.js";
-import {
-  commandsGetAll,
-  runtimeSendMessage,
-  storageLocalGet,
-  storageSyncGet,
-  storageSyncSet,
-  tabsCreate,
-} from "./lib/chrome.js";
-import {
-  detectPlatform,
-  getConfig,
-  getSettingsSnapshot,
-  getStoredSettingsShape,
-  normalizeHoverTranslateDelayMs,
-  runGenerateRequest,
-} from "./lib/utils.js";
-import { createDefaultUpdateState, UPDATE_STATE_KEY } from "../shared/update.js";
-
-/* ===== Sidebar navigation icons (inline SVG) ===== */
-function IconHome() {
-  return (
-    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" />
-      <path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-    </svg>
-  );
-}
-
-function IconTranslate() {
-  return (
-    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m5 8 6 6" /><path d="m4 14 6-6 2-3" /><path d="M2 5h12" /><path d="M7 2h1" />
-      <path d="m22 22-5-10-5 10" /><path d="M14 18h6" />
-    </svg>
-  );
-}
-
-function IconKeyboard() {
-  return (
-    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <rect width="20" height="16" x="2" y="4" rx="2" /><path d="M6 8h.001" /><path d="M10 8h.001" />
-      <path d="M14 8h.001" /><path d="M18 8h.001" /><path d="M8 12h.001" /><path d="M12 12h.001" />
-      <path d="M16 12h.001" /><path d="M7 16h10" />
-    </svg>
-  );
-}
-
-function IconBook() {
-  return (
-    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
-      <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
-    </svg>
-  );
-}
-
-function IconInfo() {
-  return (
-    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" />
-    </svg>
-  );
-}
-
-function IconBrand() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m5 8 6 6" /><path d="m4 14 6-6 2-3" /><path d="M2 5h12" /><path d="M7 2h1" />
-      <path d="m22 22-5-10-5 10" /><path d="M14 18h6" />
-    </svg>
-  );
-}
-
-const NAV_ITEMS = [
-  { id: "home", label: "首页", Icon: IconHome },
-  { id: "translate", label: "翻译测试", Icon: IconTranslate },
-  { id: "shortcuts", label: "快捷键", Icon: IconKeyboard },
-  { id: "learning", label: "学习模式", Icon: IconBook },
-  { id: "about", label: "关于", Icon: IconInfo },
-];
+import { Sidebar } from "./components/Sidebar.jsx";
+import { HomeTab } from "./components/HomeTab.jsx";
+import { TranslateTestTab } from "./components/TranslateTestTab.jsx";
+import { ShortcutsTab } from "./components/ShortcutsTab.jsx";
+import { LearningTab } from "./components/LearningTab.jsx";
+import { AboutTab } from "./components/AboutTab.jsx";
+import { useSettings } from "./hooks/useSettings.js";
+import { useConnectionStatus } from "./hooks/useConnectionStatus.js";
+import { useUpdateCheck } from "./hooks/useUpdateCheck.js";
+import { useTranslateTest } from "./hooks/useTranslateTest.js";
+import { TRANSLATE_RESULT_KEY } from "../shared/constants.js";
+import { commandsGetAll, storageLocalGet } from "./lib/chrome.js";
+import { detectPlatform } from "./lib/utils.js";
 
 export function OptionsApp() {
-  const currentVersion = chrome.runtime.getManifest().version;
   const [view, setView] = useState(
     window.location.hash === "#translate" ? "translate-result" : "options",
   );
-  const [settings, setSettings] = useState({
-    ollamaUrl: DEFAULT_OLLAMA_URL,
-    ollamaModel: DEFAULT_OLLAMA_MODEL,
-    ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
-    ollamaAutoTranslateMode: DEFAULT_AUTO_TRANSLATE_MODE,
-    ollamaHoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
-    ollamaHoverTranslateDelayMs: String(DEFAULT_HOVER_TRANSLATE_DELAY_MS),
-    ollamaLearningModeEnabled: DEFAULT_LEARNING_MODE_ENABLED,
-  });
   const [activeTab, setActiveTab] = useState("home");
   const [translateResult, setTranslateResult] = useState({});
-  const { status, showStatus: showAutoSaveStatus } = useTransientStatus();
-  const [connectionStatus, setConnectionStatus] = useState({
-    kind: "pending",
-    text: "检测中…",
-    showAction: false,
-  });
-  const [models, setModels] = useState([]);
-  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
-  const [originsModalOpen, setOriginsModalOpen] = useState(false);
   const [originsPlatform, setOriginsPlatform] = useState(detectPlatform());
-  const [testConnectionResult, setTestConnectionResult] = useState({
-    text: "",
-    tone: "",
-    showAction: false,
-  });
-  const [testInput, setTestInput] = useState("");
-  const [testSourceLang, setTestSourceLang] = useState("auto");
-  const [testTargetLang, setTestTargetLang] = useState(DEFAULT_TRANSLATE_TARGET_LANG);
-  const [detectLangResult, setDetectLangResult] = useState({ text: "", isError: false });
-  const [testTranslateHint, setTestTranslateHint] = useState({ text: "", isError: false });
-  const [testTranslateResult, setTestTranslateResult] = useState({
-    text: "",
-    tone: "empty",
-  });
   const [shortcuts, setShortcuts] = useState([]);
-  const [showShortcutsHint, setShowShortcutsHint] = useState(false);
-  const [updateState, setUpdateState] = useState(createDefaultUpdateState(currentVersion));
-  const dropdownRef = useRef(null);
-  const settingsRef = useRef(settings);
-  const lastSavedSettingsRef = useRef("");
-  const autoSaveTimerRef = useRef(null);
-  const connectionRequestIdRef = useRef(0);
 
-  useEffect(() => {
-    settingsRef.current = settings;
-  }, [settings]);
+  const {
+    settings,
+    settingsRef,
+    autoSaveStatus,
+    showAutoSaveStatus,
+    persistSettings,
+    updateSettings,
+    loadSettings,
+  } = useSettings();
 
-  useEffect(() => {
-    return () => {
-      window.clearTimeout(autoSaveTimerRef.current);
-    };
-  }, []);
+  const {
+    currentVersion,
+    updateState,
+    loadUpdateState,
+    runExtensionUpdateCheck,
+    openUpdatePage,
+  } = useUpdateCheck();
 
-  useOutsideClick(dropdownRef, () => setModelDropdownOpen(false), modelDropdownOpen);
+  const {
+    connectionStatus,
+    setConnectionStatus,
+    models,
+    modelDropdownOpen,
+    setModelDropdownOpen,
+    originsModalOpen,
+    setOriginsModalOpen,
+    testConnectionResult,
+    updateConnectionStatus,
+  } = useConnectionStatus({ settingsRef, updateSettings, persistSettings });
+
+  const translateTest = useTranslateTest({
+    settingsRef,
+    setConnectionStatus,
+    setOriginsModalOpen,
+  });
 
   useEffect(() => {
     let cancelled = false;
 
     async function init() {
-      const [storedSettings, storedTranslateResult, storedUpdateState, commandList] =
-        await Promise.all([
-          storageSyncGet({
-            ollamaUrl: DEFAULT_OLLAMA_URL,
-            ollamaModel: DEFAULT_OLLAMA_MODEL,
-            ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
-            ollamaAutoTranslateMode: DEFAULT_AUTO_TRANSLATE_MODE,
-            ollamaAutoTranslateSelection: false,
-            ollamaHoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
-            ollamaHoverTranslateDelayMs: DEFAULT_HOVER_TRANSLATE_DELAY_MS,
-            ollamaLearningModeEnabled: DEFAULT_LEARNING_MODE_ENABLED,
-          }),
-          storageLocalGet(TRANSLATE_RESULT_KEY),
-          storageLocalGet(UPDATE_STATE_KEY),
-          commandsGetAll(),
-        ]);
+      const [nextSettings, storedTranslateResult, commandList] = await Promise.all([
+        loadSettings(),
+        storageLocalGet(TRANSLATE_RESULT_KEY),
+        commandsGetAll(),
+      ]);
       if (cancelled) return;
 
-      const nextSettings = getStoredSettingsShape(storedSettings);
-      settingsRef.current = nextSettings;
-      setSettings(nextSettings);
-      setTestTargetLang(nextSettings.ollamaTranslateTargetLang);
+      translateTest.setTestTargetLang(nextSettings.ollamaTranslateTargetLang);
       setTranslateResult(storedTranslateResult || {});
-      setUpdateState({
-        ...createDefaultUpdateState(currentVersion),
-        ...(storedUpdateState || {}),
-      });
+      await loadUpdateState();
       setShortcuts(commandList);
-      lastSavedSettingsRef.current = JSON.stringify(getSettingsSnapshot(nextSettings));
       await updateConnectionStatus(nextSettings);
     }
 
@@ -202,334 +85,6 @@ export function OptionsApp() {
     };
   }, []);
 
-  useEffect(() => {
-    function handleStorageChanged(changes, areaName) {
-      if (areaName !== "local" || !(UPDATE_STATE_KEY in changes)) return;
-      setUpdateState({
-        ...createDefaultUpdateState(currentVersion),
-        ...(changes[UPDATE_STATE_KEY].newValue || {}),
-      });
-    }
-
-    chrome.storage.onChanged.addListener(handleStorageChanged);
-    return () => {
-      chrome.storage.onChanged.removeListener(handleStorageChanged);
-    };
-  }, [currentVersion]);
-
-  async function persistSettings(nextSettings, options = {}) {
-    const { force = false, silent = false } = options;
-    const snapshot = getSettingsSnapshot(nextSettings);
-    const serialized = JSON.stringify(snapshot);
-    if (!force && serialized === lastSavedSettingsRef.current) {
-      return snapshot;
-    }
-    await storageSyncSet(snapshot);
-    lastSavedSettingsRef.current = serialized;
-    if (!silent) showAutoSaveStatus("已自动保存");
-    return snapshot;
-  }
-
-  function scheduleSettingsSave(nextSettings, delay = 500) {
-    window.clearTimeout(autoSaveTimerRef.current);
-    autoSaveTimerRef.current = window.setTimeout(() => {
-      void persistSettings(nextSettings).catch((error) => {
-        console.error("Auto save settings failed:", error);
-        showAutoSaveStatus("自动保存失败", true);
-      });
-    }, delay);
-  }
-
-  function updateSettings(partial, persistMode = "none", options = {}) {
-    setSettings((previous) => {
-      const next =
-        typeof partial === "function" ? partial(previous) : { ...previous, ...partial };
-      settingsRef.current = next;
-      if (persistMode === "now") {
-        void persistSettings(next, options).catch((error) => {
-          console.error("Save settings failed:", error);
-          showAutoSaveStatus("自动保存失败", true);
-        });
-      } else if (persistMode === "debounced") {
-        scheduleSettingsSave(next, options.delay);
-      }
-      return next;
-    });
-  }
-
-  async function updateConnectionStatus(nextSettings, options = {}) {
-    const { skipModalOnError = false, preserveTestMessage = false } = options;
-    const requestId = ++connectionRequestIdRef.current;
-    setConnectionStatus({
-      kind: "pending",
-      text: "检测中…",
-      showAction: false,
-    });
-    setModelDropdownOpen(false);
-
-    const { base } = getConfig(nextSettings);
-
-    try {
-      const tagsResponse = await fetch(`${base}/api/tags`, { method: "GET" });
-      if (requestId !== connectionRequestIdRef.current) return;
-
-      if (tagsResponse.status === 403) {
-        setConnectionStatus({
-          kind: "403",
-          text: "Ollama 已运行，但拒绝扩展请求（403）",
-          showAction: true,
-        });
-        setModels([]);
-        if (!preserveTestMessage) {
-          setTestConnectionResult({
-            text: "Ollama 已运行，但拒绝扩展请求（403）",
-            tone: "err",
-            showAction: true,
-          });
-        }
-        if (!skipModalOnError) setOriginsModalOpen(true);
-        return;
-      }
-
-      if (!tagsResponse.ok) {
-        throw new Error(`HTTP ${tagsResponse.status}`);
-      }
-
-      const tagsData = await tagsResponse.json();
-      const nextModels = tagsData.models || [];
-      const probeResponse = await fetch(`${base}/api/__probe_origin__`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
-
-      if (requestId !== connectionRequestIdRef.current) return;
-
-      if (probeResponse.status === 403) {
-        setConnectionStatus({
-          kind: "403",
-          text: "Ollama 已运行，但拒绝扩展请求（403）",
-          showAction: true,
-        });
-        setModels([]);
-        if (!preserveTestMessage) {
-          setTestConnectionResult({
-            text: "Ollama 已运行，但拒绝扩展请求（403）",
-            tone: "err",
-            showAction: true,
-          });
-        }
-        if (!skipModalOnError) setOriginsModalOpen(true);
-        return;
-      }
-
-      setConnectionStatus({
-        kind: "ok",
-        text: "Ollama 已运行",
-        showAction: false,
-      });
-      setModels(nextModels);
-      setOriginsModalOpen(false);
-
-      if (!preserveTestMessage) {
-        setTestConnectionResult({
-          text:
-            nextModels.length > 0
-              ? `连接成功，已拉取 ${nextModels.length} 个模型`
-              : "连接成功，但未找到已拉取的模型",
-          tone: "ok",
-          showAction: false,
-        });
-      }
-
-      const currentModel = nextSettings.ollamaModel;
-      const names = nextModels.map((model) => model.name);
-      const selectedModel = names.includes(currentModel) ? currentModel : names[0] || "";
-
-      if (selectedModel !== currentModel) {
-        const correctedSettings = {
-          ...settingsRef.current,
-          ollamaModel: selectedModel,
-        };
-        settingsRef.current = correctedSettings;
-        setSettings(correctedSettings);
-        await persistSettings(correctedSettings, { silent: true });
-      }
-    } catch (error) {
-      if (requestId !== connectionRequestIdRef.current) return;
-      setConnectionStatus({
-        kind: "err",
-        text: "Ollama 未连接",
-        showAction: true,
-      });
-      setModels([]);
-      if (!preserveTestMessage) {
-        setTestConnectionResult({
-          text:
-            (error.message || String(error)) === "Failed to fetch"
-              ? "Ollama 连接失败"
-              : error.message || String(error),
-          tone: "err",
-          showAction: true,
-        });
-      }
-      if (!skipModalOnError) setOriginsModalOpen(true);
-    }
-  }
-
-  async function runDetectLanguage() {
-    const text = testInput.trim();
-    if (!text) {
-      setDetectLangResult({ text: "请先输入要识别的文本", isError: true });
-      return;
-    }
-
-    const { base, model } = getConfig(settingsRef.current);
-    if (!model) {
-      setDetectLangResult({ text: "请先选择模型", isError: true });
-      return;
-    }
-
-    setDetectLangResult({ text: "识别中…", isError: false });
-
-    try {
-      const probe = await fetch(`${base}/api/__probe_origin__`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
-      if (probe.status === 403) {
-        setDetectLangResult({ text: "", isError: false });
-        setConnectionStatus({
-          kind: "403",
-          text: "Ollama 已运行，但拒绝扩展请求（403）",
-          showAction: true,
-        });
-        setOriginsModalOpen(true);
-        return;
-      }
-
-      const prompt =
-        "Identify the language of the following text. Reply with only one word: the language name in English (e.g. Chinese, English, Japanese, French, German, Spanish, Korean). No other text.\n\n" +
-        text;
-      const language = await runGenerateRequest(base, model, prompt);
-      setDetectLangResult({
-        text: language ? `识别为：${language.replace(/\.$/, "")}` : "未能识别",
-        isError: false,
-      });
-    } catch (error) {
-      setDetectLangResult({
-        text:
-          (error.message || String(error)) === "Failed to fetch"
-            ? "Ollama 连接失败"
-            : error.message || String(error),
-        isError: true,
-      });
-      setOriginsModalOpen(true);
-    }
-  }
-
-  async function runTranslateTest() {
-    const text = testInput.trim();
-    if (!text) {
-      setTestTranslateHint({ text: "请先输入要翻译的文本", isError: true });
-      setTestTranslateResult({ text: "", tone: "empty" });
-      return;
-    }
-
-    const { base, model } = getConfig(settingsRef.current);
-    if (!model) {
-      setTestTranslateHint({ text: "请先选择模型", isError: true });
-      setTestTranslateResult({ text: "", tone: "empty" });
-      return;
-    }
-
-    setTestTranslateHint({ text: "", isError: false });
-    setTestTranslateResult({ text: "翻译中…", tone: "normal" });
-
-    try {
-      const probe = await fetch(`${base}/api/__probe_origin__`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
-      if (probe.status === 403) {
-        setTestTranslateResult({ text: "", tone: "empty" });
-        setConnectionStatus({
-          kind: "403",
-          text: "Ollama 已运行，但拒绝扩展请求（403）",
-          showAction: true,
-        });
-        setOriginsModalOpen(true);
-        return;
-      }
-
-      const prompt =
-        testSourceLang === "auto"
-          ? `Translate the following text to ${testTargetLang}. Detect the source language automatically. Only output the translation, no explanation or extra text.\n\n${text}`
-          : `Translate the following text from ${testSourceLang} to ${testTargetLang}. Only output the translation, no explanation or extra text.\n\n${text}`;
-      const translation = await runGenerateRequest(base, model, prompt);
-      setTestTranslateResult({
-        text: translation || "（模型未返回内容）",
-        tone: "normal",
-      });
-    } catch (error) {
-      setTestTranslateResult({
-        text:
-          (error.message || String(error)) === "Failed to fetch"
-            ? "Ollama 连接失败"
-            : error.message || String(error),
-        tone: "error",
-      });
-      setOriginsModalOpen(true);
-    }
-  }
-
-  async function runExtensionUpdateCheck() {
-    setUpdateState((previous) => ({
-      ...previous,
-      status: "checking",
-      checkedAt: Date.now(),
-      error: "",
-    }));
-
-    try {
-      const response = await runtimeSendMessage({
-        action: "checkExtensionUpdate",
-      });
-
-      if (!response?.ok) {
-        throw new Error(response?.error || "检查失败");
-      }
-
-      setUpdateState({
-        ...createDefaultUpdateState(currentVersion),
-        ...(response.state || {}),
-      });
-    } catch (error) {
-      setUpdateState((previous) => ({
-        ...previous,
-        status: "error",
-        checkedAt: Date.now(),
-        error: error.message || String(error),
-      }));
-    }
-  }
-
-  async function openUpdatePage() {
-    if (!updateState.updateUrl) return;
-    await tabsCreate(updateState.updateUrl);
-  }
-
-  async function openShortcutsPage() {
-    try {
-      await tabsCreate(SHORTCUTS_URL);
-      setShowShortcutsHint(false);
-    } catch (_) {
-      setShowShortcutsHint(true);
-    }
-  }
-
   function openOptionsView() {
     history.replaceState(null, "", window.location.pathname);
     setView("options");
@@ -537,39 +92,6 @@ export function OptionsApp() {
 
   if (view === "translate-result") {
     return <TranslateResultView result={translateResult} onBack={openOptionsView} />;
-  }
-
-  const modelCountText =
-    connectionStatus.kind === "ok" ? `（总 ${models.length} 个模型）` : "";
-  const testConnectionClassName =
-    testConnectionResult.tone === "ok"
-      ? "test-result ok"
-      : testConnectionResult.tone === "err"
-        ? "test-result err"
-        : "test-result";
-  const testTranslateClassName =
-    testTranslateResult.tone === "error"
-      ? "test-result-block error"
-      : testTranslateResult.tone === "empty"
-        ? "test-result-block empty"
-        : "test-result-block";
-  const updateCheckedAtText = updateState.checkedAt
-    ? new Intl.DateTimeFormat("zh-CN", {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(updateState.checkedAt)
-    : "";
-  let updateSummaryText = "等待版本检查";
-  if (updateState.status === "checking") {
-    updateSummaryText = "正在检查新版本…";
-  } else if (updateState.status === "available") {
-    updateSummaryText = `发现新版本 ${updateState.latestVersion}`;
-  } else if (updateState.status === "up-to-date") {
-    updateSummaryText = "当前已是最新版本";
-  } else if (updateState.status === "error") {
-    updateSummaryText = updateState.error || "检查更新失败";
-  } else if (updateState.checkedAt) {
-    updateSummaryText = "等待下一次检查";
   }
 
   return (
@@ -581,35 +103,12 @@ export function OptionsApp() {
         onClose={() => setOriginsModalOpen(false)}
       />
       <div className="options">
-        {/* ===== Sidebar ===== */}
-        <aside className="options-sidebar">
-          <div className="sidebar-brand">
-            <div className="sidebar-brand__icon">
-              <IconBrand />
-            </div>
-            <span className="sidebar-brand__text">Ollama 翻译</span>
-          </div>
-          <nav className="sidebar-nav">
-            {NAV_ITEMS.map(({ id, label, Icon }) => (
-              <button
-                key={id}
-                type="button"
-                className="sidebar-nav-item"
-                role="tab"
-                aria-selected={activeTab === id}
-                onClick={() => setActiveTab(id)}
-              >
-                <Icon />
-                <span>{label}</span>
-              </button>
-            ))}
-          </nav>
-          <div className="sidebar-footer">
-            <span className="sidebar-version">v{currentVersion}</span>
-          </div>
-        </aside>
+        <Sidebar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          currentVersion={currentVersion}
+        />
 
-        {/* ===== Content ===== */}
         <main className="options-content">
           <h1>Ollama 翻译设置</h1>
           <ConnectionStatusBanner
@@ -617,413 +116,71 @@ export function OptionsApp() {
             onOpenOrigins={() => setOriginsModalOpen(true)}
           />
           <div className="options-tabs">
-            {/* hidden original tablist — navigation is now in sidebar */}
             <div className="options-tabs__tablist" role="tablist" aria-label="设置"></div>
 
             <div className="options-tabs__panel" hidden={activeTab !== "home"} key="home">
-              <div className="card">
-                <h2>Ollama</h2>
-                <div className="field">
-                  <label htmlFor="ollamaUrl">Ollama API 地址</label>
-                  <input
-                    id="ollamaUrl"
-                    type="text"
-                    placeholder="http://127.0.0.1:11434"
-                    value={settings.ollamaUrl}
-                    onChange={(event) =>
-                      updateSettings({ ollamaUrl: event.target.value }, "debounced", {
-                        delay: 500,
-                      })
-                    }
-                    onBlur={() => {
-                      void persistSettings(settingsRef.current).catch((error) => {
-                        console.error("Save settings failed:", error);
-                        showAutoSaveStatus("自动保存失败", true);
-                      });
-                    }}
-                  />
-                  <div className="field-row" style={{ marginTop: 10 }}>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={async () => {
-                        setTestConnectionResult({
-                          text: "检测中…",
-                          tone: "",
-                          showAction: false,
-                        });
-                        await updateConnectionStatus(settingsRef.current, {
-                          skipModalOnError: true,
-                          preserveTestMessage: false,
-                        });
-                      }}
-                    >
-                      测试连接
-                    </button>
-                    <span className={testConnectionClassName}>{testConnectionResult.text}</span>
-                    {testConnectionResult.showAction ? (
-                      <button
-                        type="button"
-                        className="btn btn-secondary test-result-action"
-                        onClick={() => setOriginsModalOpen(true)}
-                      >
-                        查看解决方法
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="field">
-                  <label htmlFor="ollamaModel">
-                    模型<span className="model-count">{modelCountText}</span>
-                  </label>
-                  <input type="hidden" id="ollamaModel" value={settings.ollamaModel} />
-                  <ModelDropdown
-                    models={models}
-                    selectedValue={settings.ollamaModel}
-                    disabled={connectionStatus.kind !== "ok"}
-                    isOpen={modelDropdownOpen}
-                    onToggle={() => {
-                      if (connectionStatus.kind !== "ok") return;
-                      setModelDropdownOpen((open) => !open);
-                    }}
-                    onSelect={(value) => {
-                      setModelDropdownOpen(false);
-                      updateSettings({ ollamaModel: value }, "now");
-                    }}
-                    dropdownRef={dropdownRef}
-                  />
-                </div>
-
-                <div className="field">
-                  <label htmlFor="ollamaTranslateTargetLang">默认翻译语言</label>
-                  <select
-                    id="ollamaTranslateTargetLang"
-                    className="select"
-                    value={settings.ollamaTranslateTargetLang}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setTestTargetLang(value);
-                      updateSettings({ ollamaTranslateTargetLang: value }, "now");
-                    }}
-                  >
-                    {LANG_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+              <HomeTab
+                settings={settings}
+                updateSettings={updateSettings}
+                persistSettings={persistSettings}
+                settingsRef={settingsRef}
+                showAutoSaveStatus={showAutoSaveStatus}
+                connectionStatus={connectionStatus}
+                models={models}
+                modelDropdownOpen={modelDropdownOpen}
+                setModelDropdownOpen={setModelDropdownOpen}
+                setOriginsModalOpen={setOriginsModalOpen}
+                testConnectionResult={testConnectionResult}
+                updateConnectionStatus={updateConnectionStatus}
+              />
             </div>
 
             <div className="options-tabs__panel" hidden={activeTab !== "translate"} key="translate">
-              <div className="card card-translate-test">
-                <h2>翻译测试</h2>
-                <div className="field">
-                  <label htmlFor="ollamaTestInput">要翻译的文本</label>
-                  <textarea
-                    id="ollamaTestInput"
-                    className="textarea"
-                    rows="3"
-                    placeholder="输入要翻译的文本，点击下方按钮测试"
-                    value={testInput}
-                    onChange={(event) => setTestInput(event.target.value)}
-                  ></textarea>
-                </div>
-                <div className="field translate-test-actions-wrap">
-                  <div className="field translate-test-actions">
-                    <label htmlFor="ollamaTestSourceLang" className="translate-test-actions__label">
-                      输入语言
-                    </label>
-                    <div className="translate-test-actions__row">
-                      <select
-                        id="ollamaTestSourceLang"
-                        className="select translate-test-actions__select"
-                        value={testSourceLang}
-                        onChange={(event) => setTestSourceLang(event.target.value)}
-                      >
-                        <option value="auto">自动识别</option>
-                        {LANG_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      <button type="button" className="btn btn-secondary" onClick={runDetectLanguage}>
-                        识别语言
-                      </button>
-                      <span
-                        className={`detect-lang-result ${detectLangResult.isError ? "error" : ""}`.trim()}
-                        aria-live="polite"
-                      >
-                        {detectLangResult.text}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="field translate-test-actions">
-                    <label htmlFor="ollamaTestLang" className="translate-test-actions__label">
-                      翻译为
-                    </label>
-                    <div className="translate-test-actions__row">
-                      <select
-                        id="ollamaTestLang"
-                        className="select translate-test-actions__select"
-                        value={testTargetLang}
-                        onChange={(event) => setTestTargetLang(event.target.value)}
-                      >
-                        {LANG_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      <button type="button" className="btn btn-secondary" onClick={runTranslateTest}>
-                        测试翻译
-                      </button>
-                      <span
-                        className={`detect-lang-result ${testTranslateHint.isError ? "error" : ""}`.trim()}
-                        aria-live="polite"
-                      >
-                        {testTranslateHint.text}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="field translate-test-actions translate-test-result-row">
-                    <label className="translate-test-actions__label">翻译</label>
-                    <div className={testTranslateClassName} aria-live="polite">
-                      {testTranslateResult.text}
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <TranslateTestTab
+                testInput={translateTest.testInput}
+                setTestInput={translateTest.setTestInput}
+                testSourceLang={translateTest.testSourceLang}
+                setTestSourceLang={translateTest.setTestSourceLang}
+                testTargetLang={translateTest.testTargetLang}
+                setTestTargetLang={translateTest.setTestTargetLang}
+                detectLangResult={translateTest.detectLangResult}
+                testTranslateHint={translateTest.testTranslateHint}
+                testTranslateResult={translateTest.testTranslateResult}
+                runDetectLanguage={translateTest.runDetectLanguage}
+                runTranslateTest={translateTest.runTranslateTest}
+              />
             </div>
 
             <div className="options-tabs__panel" hidden={activeTab !== "shortcuts"} key="shortcuts">
-              <div className="card shortcuts-card">
-                <h2>快捷键</h2>
-                <p className="shortcuts-desc">
-                  选中页面文字后，可使用快捷键直接翻译（需在浏览器中先绑定按键）。
-                </p>
-                <div className="field">
-                  <label>自动翻译模式</label>
-                  <div className="choice-list">
-                    <label className="choice-item">
-                      <input
-                        type="radio"
-                        name="autoTranslateMode"
-                        value="off"
-                        checked={settings.ollamaAutoTranslateMode === "off"}
-                        onChange={() =>
-                          updateSettings({ ollamaAutoTranslateMode: "off" }, "now")
-                        }
-                      />
-                      <span className="choice-item__title">关闭自动翻译</span>
-                      <span className="choice-item__hint">
-                        仅保留手动快捷键、右键菜单和选区按钮。
-                      </span>
-                    </label>
-                    <label className="choice-item">
-                      <input
-                        type="radio"
-                        name="autoTranslateMode"
-                        value="selection"
-                        checked={settings.ollamaAutoTranslateMode === "selection"}
-                        onChange={() =>
-                          updateSettings({ ollamaAutoTranslateMode: "selection" }, "now")
-                        }
-                      />
-                      <span className="choice-item__title">双击 / 三击选中后自动翻译</span>
-                      <span className="choice-item__hint">
-                        双击单词或三击整段后自动翻译，适合基于选区的操作方式。
-                      </span>
-                    </label>
-                    <label className="choice-item">
-                      <input
-                        type="radio"
-                        name="autoTranslateMode"
-                        value="hover"
-                        checked={settings.ollamaAutoTranslateMode === "hover"}
-                        onChange={() =>
-                          updateSettings({ ollamaAutoTranslateMode: "hover" }, "now")
-                        }
-                      />
-                      <span className="choice-item__title">悬停自动翻译</span>
-                      <span className="choice-item__hint">
-                        鼠标移动到文本上后自动取词或取整段，无需双击或按快捷键。
-                      </span>
-                    </label>
-                  </div>
-                </div>
-
-                <div className="field" hidden={settings.ollamaAutoTranslateMode !== "hover"}>
-                  <label htmlFor="hoverTranslateScope">悬停翻译范围</label>
-                  <select
-                    id="hoverTranslateScope"
-                    className="select"
-                    value={settings.ollamaHoverTranslateScope}
-                    onChange={(event) =>
-                      updateSettings(
-                        { ollamaHoverTranslateScope: event.target.value },
-                        "now",
-                      )
-                    }
-                  >
-                    <option value="word">只翻译单词</option>
-                    <option value="paragraph">翻译整段话</option>
-                  </select>
-                  <span className="hint">
-                    悬停模式下，决定自动发送给 Ollama 的文本范围。
-                  </span>
-                </div>
-
-                <div className="field" hidden={settings.ollamaAutoTranslateMode !== "hover"}>
-                  <label htmlFor="hoverTranslateDelayMs">悬停延迟</label>
-                  <div className="input-with-suffix">
-                    <input
-                      id="hoverTranslateDelayMs"
-                      type="number"
-                      className="field-input field-input--number"
-                      min="0"
-                      max="5000"
-                      step="50"
-                      inputMode="numeric"
-                      value={settings.ollamaHoverTranslateDelayMs}
-                      onChange={(event) =>
-                        updateSettings(
-                          { ollamaHoverTranslateDelayMs: event.target.value },
-                          "debounced",
-                          { delay: 500 },
-                        )
-                      }
-                      onBlur={() => {
-                        const normalized = String(
-                          normalizeHoverTranslateDelayMs(
-                            settingsRef.current.ollamaHoverTranslateDelayMs,
-                          ),
-                        );
-                        const nextSettings = {
-                          ...settingsRef.current,
-                          ollamaHoverTranslateDelayMs: normalized,
-                        };
-                        settingsRef.current = nextSettings;
-                        setSettings(nextSettings);
-                        void persistSettings(nextSettings).catch((error) => {
-                          console.error("Save settings failed:", error);
-                          showAutoSaveStatus("自动保存失败", true);
-                        });
-                      }}
-                    />
-                    <span className="input-suffix">毫秒</span>
-                  </div>
-                  <span className="hint">
-                    鼠标停留多久后开始自动翻译，默认 200 毫秒。
-                  </span>
-                </div>
-
-                <ShortcutsList
-                  commands={shortcuts}
-                  supportsCommands={!!chrome.commands?.getAll}
-                />
-                <div className="shortcuts-actions">
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={openShortcutsPage}
-                  >
-                    打开浏览器快捷键设置
-                  </button>
-                  {showShortcutsHint ? (
-                    <span className="hint shortcuts-open-hint">
-                      若无法自动打开，请手动打开：扩展程序 → 键盘快捷方式（Chrome
-                      地址栏输入 <code>{SHORTCUTS_URL}</code>）
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              <p className="shortcuts-hint">
-                使用方式：选中文字后按快捷键；或将鼠标悬停在单词上按快捷键；或右键
-                「Ollama 翻译选中内容」
-              </p>
+              <ShortcutsTab
+                settings={settings}
+                settingsRef={settingsRef}
+                updateSettings={updateSettings}
+                persistSettings={persistSettings}
+                showAutoSaveStatus={showAutoSaveStatus}
+                shortcuts={shortcuts}
+              />
             </div>
 
             <div className="options-tabs__panel" hidden={activeTab !== "learning"} key="learning">
-              <div className="card">
-                <h2>学习模式</h2>
-                <div className="field">
-                  <label className="checkbox-label" htmlFor="learningModeEnabled">
-                    <input
-                      id="learningModeEnabled"
-                      type="checkbox"
-                      checked={settings.ollamaLearningModeEnabled}
-                      onChange={(event) =>
-                        updateSettings(
-                          { ollamaLearningModeEnabled: event.target.checked },
-                          "now",
-                        )
-                      }
-                    />
-                    <span>启用学习模式</span>
-                  </label>
-                  <span className="hint">
-                    开启后，翻译完成的 tip 弹窗会追加主句结构、句法拆分和学习说明。默认关闭，以减少额外分析带来的等待时间。
-                  </span>
-                </div>
-              </div>
+              <LearningTab
+                settings={settings}
+                updateSettings={updateSettings}
+              />
             </div>
 
             <div className="options-tabs__panel" hidden={activeTab !== "about"} key="about">
-              <div className="card update-card">
-                <h2>关于 Ollama 翻译</h2>
-                <div className="update-status-card">
-                  <div className="update-status-card__row">
-                    <span className="update-status-card__label">当前版本</span>
-                    <span className="update-status-card__value">{currentVersion}</span>
-                  </div>
-                  <div className="update-status-card__row">
-                    <span className="update-status-card__label">更新状态</span>
-                    <span
-                      className={`update-status-card__value update-status-card__value--${updateState.status}`.trim()}
-                    >
-                      {updateSummaryText}
-                    </span>
-                  </div>
-                  {updateCheckedAtText ? (
-                    <div className="update-status-card__row">
-                      <span className="update-status-card__label">最近检查</span>
-                      <span className="update-status-card__value">{updateCheckedAtText}</span>
-                    </div>
-                  ) : null}
-                  {updateState.notes ? (
-                    <div className="update-status-card__notes">{updateState.notes}</div>
-                  ) : null}
-                </div>
-
-                <div className="update-actions">
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={runExtensionUpdateCheck}
-                  >
-                    立即检查
-                  </button>
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={openUpdatePage}
-                    disabled={updateState.status !== "available" || !updateState.updateUrl}
-                  >
-                    打开更新页面
-                  </button>
-                </div>
-              </div>
+              <AboutTab
+                currentVersion={currentVersion}
+                updateState={updateState}
+                runExtensionUpdateCheck={runExtensionUpdateCheck}
+                openUpdatePage={openUpdatePage}
+              />
             </div>
           </div>
         </main>
-        <p className={`status ${status.isError ? "status--error" : ""}`.trim()}>
-          {status.text}
+        <p className={`status ${autoSaveStatus.isError ? "status--error" : ""}`.trim()}>
+          {autoSaveStatus.text}
         </p>
       </div>
     </>
