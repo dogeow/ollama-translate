@@ -24,8 +24,12 @@
       "run_at": "document_idle"
     }
   ],
-  "permissions": ["storage", "contextMenus", "tabs", "scripting", "activeTab"],
-  "host_permissions": ["http://localhost:11434/*", "http://127.0.0.1:11434/*"],
+  "permissions": ["storage", "contextMenus", "tabs", "scripting", "activeTab", "alarms"],
+  "host_permissions": [
+    "http://localhost:11434/*",
+    "http://127.0.0.1:11434/*",
+    "https://raw.githubusercontent.com/dogeow/ollama-translate/*"
+  ],
   "commands": {
     "translate-selection": {
       "suggested_key": {

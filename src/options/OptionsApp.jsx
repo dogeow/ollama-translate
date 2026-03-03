@@ -20,6 +20,7 @@ import {
 } from "./lib/constants.js";
 import {
   commandsGetAll,
+  runtimeSendMessage,
   storageLocalGet,
   storageSyncGet,
   storageSyncSet,
@@ -33,8 +34,10 @@ import {
   normalizeHoverTranslateDelayMs,
   runGenerateRequest,
 } from "./lib/utils.js";
+import { createDefaultUpdateState, UPDATE_STATE_KEY } from "../shared/update.js";
 
 export function OptionsApp() {
+  const currentVersion = chrome.runtime.getManifest().version;
   const [view, setView] = useState(
     window.location.hash === "#translate" ? "translate-result" : "options",
   );
@@ -75,6 +78,7 @@ export function OptionsApp() {
   });
   const [shortcuts, setShortcuts] = useState([]);
   const [showShortcutsHint, setShowShortcutsHint] = useState(false);
+  const [updateState, setUpdateState] = useState(createDefaultUpdateState(currentVersion));
   const dropdownRef = useRef(null);
   const settingsRef = useRef(settings);
   const lastSavedSettingsRef = useRef("");
@@ -97,20 +101,22 @@ export function OptionsApp() {
     let cancelled = false;
 
     async function init() {
-      const [storedSettings, storedTranslateResult, commandList] = await Promise.all([
-        storageSyncGet({
-          ollamaUrl: DEFAULT_OLLAMA_URL,
-          ollamaModel: DEFAULT_OLLAMA_MODEL,
-          ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
-          ollamaAutoTranslateMode: DEFAULT_AUTO_TRANSLATE_MODE,
-          ollamaAutoTranslateSelection: false,
-          ollamaHoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
-          ollamaHoverTranslateDelayMs: DEFAULT_HOVER_TRANSLATE_DELAY_MS,
-          ollamaLearningModeEnabled: DEFAULT_LEARNING_MODE_ENABLED,
-        }),
-        storageLocalGet(TRANSLATE_RESULT_KEY),
-        commandsGetAll(),
-      ]);
+      const [storedSettings, storedTranslateResult, storedUpdateState, commandList] =
+        await Promise.all([
+          storageSyncGet({
+            ollamaUrl: DEFAULT_OLLAMA_URL,
+            ollamaModel: DEFAULT_OLLAMA_MODEL,
+            ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
+            ollamaAutoTranslateMode: DEFAULT_AUTO_TRANSLATE_MODE,
+            ollamaAutoTranslateSelection: false,
+            ollamaHoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
+            ollamaHoverTranslateDelayMs: DEFAULT_HOVER_TRANSLATE_DELAY_MS,
+            ollamaLearningModeEnabled: DEFAULT_LEARNING_MODE_ENABLED,
+          }),
+          storageLocalGet(TRANSLATE_RESULT_KEY),
+          storageLocalGet(UPDATE_STATE_KEY),
+          commandsGetAll(),
+        ]);
       if (cancelled) return;
 
       const nextSettings = getStoredSettingsShape(storedSettings);
@@ -118,6 +124,10 @@ export function OptionsApp() {
       setSettings(nextSettings);
       setTestTargetLang(nextSettings.ollamaTranslateTargetLang);
       setTranslateResult(storedTranslateResult || {});
+      setUpdateState({
+        ...createDefaultUpdateState(currentVersion),
+        ...(storedUpdateState || {}),
+      });
       setShortcuts(commandList);
       lastSavedSettingsRef.current = JSON.stringify(getSettingsSnapshot(nextSettings));
       await updateConnectionStatus(nextSettings);
@@ -128,6 +138,21 @@ export function OptionsApp() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    function handleStorageChanged(changes, areaName) {
+      if (areaName !== "local" || !(UPDATE_STATE_KEY in changes)) return;
+      setUpdateState({
+        ...createDefaultUpdateState(currentVersion),
+        ...(changes[UPDATE_STATE_KEY].newValue || {}),
+      });
+    }
+
+    chrome.storage.onChanged.addListener(handleStorageChanged);
+    return () => {
+      chrome.storage.onChanged.removeListener(handleStorageChanged);
+    };
+  }, [currentVersion]);
 
   async function persistSettings(nextSettings, options = {}) {
     const { force = false, silent = false } = options;
@@ -397,6 +422,42 @@ export function OptionsApp() {
     }
   }
 
+  async function runExtensionUpdateCheck() {
+    setUpdateState((previous) => ({
+      ...previous,
+      status: "checking",
+      checkedAt: Date.now(),
+      error: "",
+    }));
+
+    try {
+      const response = await runtimeSendMessage({
+        action: "checkExtensionUpdate",
+      });
+
+      if (!response?.ok) {
+        throw new Error(response?.error || "检查失败");
+      }
+
+      setUpdateState({
+        ...createDefaultUpdateState(currentVersion),
+        ...(response.state || {}),
+      });
+    } catch (error) {
+      setUpdateState((previous) => ({
+        ...previous,
+        status: "error",
+        checkedAt: Date.now(),
+        error: error.message || String(error),
+      }));
+    }
+  }
+
+  async function openUpdatePage() {
+    if (!updateState.updateUrl) return;
+    await tabsCreate(updateState.updateUrl);
+  }
+
   async function openShortcutsPage() {
     try {
       await tabsCreate(SHORTCUTS_URL);
@@ -429,6 +490,24 @@ export function OptionsApp() {
       : testTranslateResult.tone === "empty"
         ? "test-result-block empty"
         : "test-result-block";
+  const updateCheckedAtText = updateState.checkedAt
+    ? new Intl.DateTimeFormat("zh-CN", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(updateState.checkedAt)
+    : "";
+  let updateSummaryText = "等待版本检查";
+  if (updateState.status === "checking") {
+    updateSummaryText = "正在检查新版本…";
+  } else if (updateState.status === "available") {
+    updateSummaryText = `发现新版本 ${updateState.latestVersion}`;
+  } else if (updateState.status === "up-to-date") {
+    updateSummaryText = "当前已是最新版本";
+  } else if (updateState.status === "error") {
+    updateSummaryText = updateState.error || "检查更新失败";
+  } else if (updateState.checkedAt) {
+    updateSummaryText = "等待下一次检查";
+  }
 
   return (
     <>
@@ -477,6 +556,14 @@ export function OptionsApp() {
               onClick={() => setActiveTab("learning")}
             >
               学习模式
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "about"}
+              onClick={() => setActiveTab("about")}
+            >
+              关于
             </button>
           </div>
 
@@ -830,6 +917,53 @@ export function OptionsApp() {
                 <span className="hint">
                   开启后，翻译完成的 tip 弹窗会追加主句结构、句法拆分和学习说明。默认关闭，以减少额外分析带来的等待时间。
                 </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="options-tabs__panel" hidden={activeTab !== "about"}>
+            <div className="card update-card">
+              <h2>关于 Ollama 翻译</h2>
+              <div className="update-status-card">
+                <div className="update-status-card__row">
+                  <span className="update-status-card__label">当前版本</span>
+                  <span className="update-status-card__value">{currentVersion}</span>
+                </div>
+                <div className="update-status-card__row">
+                  <span className="update-status-card__label">更新状态</span>
+                  <span
+                    className={`update-status-card__value update-status-card__value--${updateState.status}`.trim()}
+                  >
+                    {updateSummaryText}
+                  </span>
+                </div>
+                {updateCheckedAtText ? (
+                  <div className="update-status-card__row">
+                    <span className="update-status-card__label">最近检查</span>
+                    <span className="update-status-card__value">{updateCheckedAtText}</span>
+                  </div>
+                ) : null}
+                {updateState.notes ? (
+                  <div className="update-status-card__notes">{updateState.notes}</div>
+                ) : null}
+              </div>
+
+              <div className="update-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={runExtensionUpdateCheck}
+                >
+                  立即检查
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={openUpdatePage}
+                  disabled={updateState.status !== "available" || !updateState.updateUrl}
+                >
+                  打开更新页面
+                </button>
               </div>
             </div>
           </div>

@@ -22,6 +22,18 @@ export function storageLocalGet(key) {
   });
 }
 
+export function runtimeSendMessage(message) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(message, (value) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(value);
+    });
+  });
+}
+
 export function commandsGetAll() {
   return new Promise((resolve) => {
     if (!chrome.commands?.getAll) {

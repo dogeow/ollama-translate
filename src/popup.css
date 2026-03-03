@@ -25,6 +25,28 @@ body {
   margin-bottom: 16px;
 }
 
+.popup-update-banner {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.popup-update-banner__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fbbf24;
+  margin-bottom: 4px;
+}
+
+.popup-update-banner__text {
+  font-size: 12px;
+  color: #fcd34d;
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+
 .links {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -112,6 +134,11 @@ body {
   opacity: 0.8;
 }
 
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .btn-primary {
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
   color: white;
@@ -120,4 +147,11 @@ body {
 .btn-secondary {
   background: #27272a;
   color: #a3a3a3;
+}
+
+.popup-version {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #71717a;
+  text-align: center;
 }

@@ -1,5 +1,14 @@
 import { checkOllamaAndGetModels, generateOllamaResponse } from "./background/ollama.js";
 import { analyzeSentenceStudy } from "./background/sentenceStudy.js";
+import {
+  compareExtensionVersions,
+  createDefaultUpdateState,
+  readUpdateFeed,
+  UPDATE_CHECK_ALARM_NAME,
+  UPDATE_CHECK_PERIOD_MINUTES,
+  UPDATE_MANIFEST_URL,
+  UPDATE_STATE_KEY,
+} from "./shared/update.js";
 
 const DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434";
 const DEFAULT_OLLAMA_MODEL = "";
@@ -32,6 +41,134 @@ async function persistTranslateResult(result) {
   await chrome.storage.local.set({
     [TRANSLATE_RESULT_KEY]: result,
   });
+}
+
+async function persistUpdateState(partialState) {
+  const currentVersion = chrome.runtime.getManifest().version;
+  const nextState = {
+    ...createDefaultUpdateState(currentVersion),
+    ...partialState,
+    currentVersion,
+  };
+
+  await chrome.storage.local.set({
+    [UPDATE_STATE_KEY]: nextState,
+  });
+  await updateActionBadge(nextState);
+
+  return nextState;
+}
+
+async function readStoredUpdateState() {
+  const stored = await chrome.storage.local.get(UPDATE_STATE_KEY);
+  return {
+    ...createDefaultUpdateState(chrome.runtime.getManifest().version),
+    ...(stored[UPDATE_STATE_KEY] || {}),
+  };
+}
+
+async function updateActionBadge(updateState) {
+  if (!chrome.action?.setBadgeText) return;
+
+  if (updateState.status === "available") {
+    await chrome.action.setBadgeText({ text: "UP" }).catch(() => {});
+    await chrome.action
+      .setBadgeBackgroundColor({ color: "#dc2626" })
+      .catch(() => {});
+    await chrome.action
+      .setTitle({
+        title: `Ollama 翻译设置\n发现新版本 ${updateState.latestVersion || ""}`.trim(),
+      })
+      .catch(() => {});
+    return;
+  }
+
+  await chrome.action.setBadgeText({ text: "" }).catch(() => {});
+  await chrome.action
+    .setTitle({
+      title: "Ollama 翻译设置",
+    })
+    .catch(() => {});
+}
+
+async function ensureUpdateCheckAlarm() {
+  if (!chrome.alarms) return;
+
+  await chrome.alarms.clear(UPDATE_CHECK_ALARM_NAME);
+
+  if (!UPDATE_MANIFEST_URL) {
+    return;
+  }
+
+  await chrome.alarms.create(UPDATE_CHECK_ALARM_NAME, {
+    delayInMinutes: 1,
+    periodInMinutes: UPDATE_CHECK_PERIOD_MINUTES,
+  });
+}
+
+async function checkForExtensionUpdate(options = {}) {
+  const { markChecking = false } = options;
+  const currentVersion = chrome.runtime.getManifest().version;
+  const manifestUrl = UPDATE_MANIFEST_URL;
+
+  if (!manifestUrl) {
+    return persistUpdateState({
+      status: "error",
+      manifestUrl,
+      checkedAt: 0,
+      latestVersion: "",
+      updateUrl: "",
+      notes: "",
+      error: "",
+    });
+  }
+
+  if (markChecking) {
+    await persistUpdateState({
+      status: "checking",
+      manifestUrl,
+      checkedAt: Date.now(),
+      latestVersion: "",
+      updateUrl: "",
+      notes: "",
+      error: "",
+    });
+  }
+
+  try {
+    const response = await fetch(manifestUrl, {
+      method: "GET",
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const payload = readUpdateFeed(await response.json());
+    const comparison = compareExtensionVersions(payload.version, currentVersion);
+
+    return persistUpdateState({
+      status: comparison > 0 ? "available" : "up-to-date",
+      manifestUrl,
+      latestVersion: payload.version,
+      updateUrl: payload.updateUrl,
+      notes: payload.notes,
+      checkedAt: Date.now(),
+      error: "",
+    });
+  } catch (error) {
+    return persistUpdateState({
+      status: "error",
+      manifestUrl,
+      latestVersion: "",
+      updateUrl: "",
+      notes: "",
+      checkedAt: Date.now(),
+      error: error.message || String(error),
+    });
+  }
 }
 
 function createTranslateRequestId(requestId) {
@@ -188,11 +325,25 @@ function openResultWindow() {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({
-    id: "ollama-translate",
-    title: "Ollama 翻译选中内容",
-    contexts: ["selection"],
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: "ollama-translate",
+      title: "Ollama 翻译选中内容",
+      contexts: ["selection"],
+    });
   });
+  void ensureUpdateCheckAlarm();
+  void checkForExtensionUpdate();
+});
+
+chrome.runtime.onStartup?.addListener(() => {
+  void ensureUpdateCheckAlarm();
+  void checkForExtensionUpdate();
+});
+
+chrome.alarms?.onAlarm.addListener((alarm) => {
+  if (alarm.name !== UPDATE_CHECK_ALARM_NAME) return;
+  void checkForExtensionUpdate();
 });
 
 chrome.commands.onCommand.addListener(async (command) => {
@@ -283,6 +434,20 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.action === "getExtensionUpdateState") {
+    readStoredUpdateState()
+      .then((state) => sendResponse({ ok: true, state }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (msg.action === "checkExtensionUpdate") {
+    checkForExtensionUpdate({ markChecking: true })
+      .then((state) => sendResponse({ ok: true, state }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
   if (msg.action !== "translate" || !msg.text) return true;
 
   const text = String(msg.text).trim();

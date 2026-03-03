@@ -21,6 +21,9 @@
 # 安装依赖
 npm install
 
+# 修改版本号（推荐）
+npm version patch
+
 # 开发模式（监听变化，自动重载）
 npm run dev
 
@@ -30,6 +33,18 @@ npm run build
 # 构建并启动预览
 npm start
 ```
+
+版本号现在以 `package.json` 为单一来源。执行 `npm run dev`、`npm run build`、`npm start` 或 `npm version patch|minor|major` 时，会自动把版本同步到 `src/manifest.json`，不再需要手动维护两份。
+
+## 更新提醒
+
+扩展默认启用“发现新版本后提醒用户手动更新”，但**不会自动安装新包**。
+
+版本清单 URL 已内置为：
+
+`https://raw.githubusercontent.com/dogeow/ollama-translate/main/latest.json`
+
+发布新版本时，同步更新仓库根目录的 `latest.json` 即可。后台会定期检查该文件；如果发现更高版本，弹窗和设置页的「关于」页签都会提示用户打开更新页面。
 
 ## 安装
 
