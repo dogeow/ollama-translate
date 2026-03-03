@@ -6,6 +6,100 @@ export function injectStyles() {
   const style = document.createElement("style");
   style.id = STYLE_ID;
   style.textContent = `
+/* ===== Theme tokens ===== */
+:root {
+    --ollama-button-text: #ffffff;
+    --ollama-button-gradient: linear-gradient(135deg, #6366f1, #7c3aed);
+    --ollama-button-gradient-hover: linear-gradient(135deg, #4f46e5, #6d28d9);
+    --ollama-button-shadow: 0 2px 12px rgba(99, 102, 241, 0.35), 0 1px 3px rgba(0,0,0,0.2);
+    --ollama-button-shadow-hover: 0 4px 16px rgba(99, 102, 241, 0.45), 0 1px 3px rgba(0,0,0,0.2);
+
+    --ollama-surface: #131316;
+    --ollama-surface-alt: #18181b;
+    --ollama-panel: #0f0f12;
+    --ollama-border: #27272a;
+    --ollama-border-soft: #2a2a4a;
+    --ollama-border-soft-hover: #3a3a5c;
+    --ollama-text: #e4e4e7;
+    --ollama-text-strong: #f4f4f5;
+    --ollama-text-secondary: #a1a1aa;
+    --ollama-text-muted: #71717a;
+    --ollama-text-disabled: #52525b;
+    --ollama-focus: #6366f1;
+    --ollama-focus-ring: rgba(30, 30, 58, 0.9);
+    --ollama-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+    --ollama-shortcut-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --ollama-placeholder: linear-gradient(90deg, #27272a, #3f3f46, #27272a);
+    --ollama-scrollbar: #27272a;
+
+    --ollama-error-text: #fca5a5;
+    --ollama-error-bg: #1c1517;
+    --ollama-error-border: rgba(239, 68, 68, 0.4);
+    --ollama-error-border-strong: #ef4444;
+
+    --ollama-copy-bg: #818cf8;
+    --ollama-copy-bg-hover: #7c7ff0;
+    --ollama-copy-border: #6366f1;
+    --ollama-copy-text: #ffffff;
+
+    --ollama-grammar-bg: #1a1a2e;
+    --ollama-grammar-line: linear-gradient(90deg, #6366f1, #2a2a4a);
+    --ollama-grammar-role-bg: #1e1e3a;
+    --ollama-grammar-role-text: #a5b4fc;
+}
+
+@media (prefers-color-scheme: light) {
+    :root {
+        --ollama-button-shadow: 0 8px 20px rgba(79, 70, 229, 0.16), 0 2px 6px rgba(15, 23, 42, 0.08);
+        --ollama-button-shadow-hover: 0 10px 24px rgba(79, 70, 229, 0.2), 0 3px 8px rgba(15, 23, 42, 0.1);
+
+        --ollama-surface: #ffffff;
+        --ollama-surface-alt: #f8fafc;
+        --ollama-panel: #f3f4f6;
+        --ollama-border: #d7deea;
+        --ollama-border-soft: #cfd7e6;
+        --ollama-border-soft-hover: #bcc7da;
+        --ollama-text: #1f2937;
+        --ollama-text-strong: #111827;
+        --ollama-text-secondary: #4b5563;
+        --ollama-text-muted: #6b7280;
+        --ollama-text-disabled: #94a3b8;
+        --ollama-focus: #4f46e5;
+        --ollama-focus-ring: rgba(79, 70, 229, 0.18);
+        --ollama-shadow: 0 18px 38px rgba(15, 23, 42, 0.14), 0 4px 12px rgba(15, 23, 42, 0.08);
+        --ollama-shortcut-shadow: 0 16px 30px rgba(15, 23, 42, 0.12);
+        --ollama-placeholder: linear-gradient(90deg, #e5e7eb, #cbd5e1, #e5e7eb);
+        --ollama-scrollbar: #cbd5e1;
+
+        --ollama-error-text: #b91c1c;
+        --ollama-error-bg: #fff1f2;
+        --ollama-error-border: rgba(220, 38, 38, 0.2);
+        --ollama-error-border-strong: #dc2626;
+
+        --ollama-copy-bg: #eef2ff;
+        --ollama-copy-bg-hover: #e0e7ff;
+        --ollama-copy-border: #c7d2fe;
+        --ollama-copy-text: #4338ca;
+
+        --ollama-grammar-bg: #eef2ff;
+        --ollama-grammar-line: linear-gradient(90deg, #6366f1, #c7d2fe);
+        --ollama-grammar-role-bg: #e0e7ff;
+        --ollama-grammar-role-text: #4338ca;
+    }
+}
+
+#${TIP_ID},
+#${SHORTCUT_HINT_ID} {
+    color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+    #${TIP_ID},
+    #${SHORTCUT_HINT_ID} {
+        color-scheme: light;
+    }
+}
+
 /* ===== Hover translate button ===== */
 #${BUTTON_ID} {
     position: absolute;
@@ -13,20 +107,20 @@ export function injectStyles() {
     padding: 6px 14px;
     font-size: 13px;
     font-weight: 500;
-    color: #fff;
-    background: linear-gradient(135deg, #6366f1, #7c3aed);
+    color: var(--ollama-button-text);
+    background: var(--ollama-button-gradient);
     border: none;
     border-radius: 8px;
     cursor: pointer;
-    box-shadow: 0 2px 12px rgba(99, 102, 241, 0.35), 0 1px 3px rgba(0,0,0,0.2);
+    box-shadow: var(--ollama-button-shadow);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     transition: transform 0.15s ease, box-shadow 0.15s ease;
     letter-spacing: 0.01em;
 }
 #${BUTTON_ID}:hover {
-    background: linear-gradient(135deg, #4f46e5, #6d28d9);
+    background: var(--ollama-button-gradient-hover);
     transform: scale(1.03);
-    box-shadow: 0 4px 16px rgba(99, 102, 241, 0.45), 0 1px 3px rgba(0,0,0,0.2);
+    box-shadow: var(--ollama-button-shadow-hover);
 }
 
 /* ===== Tip container ===== */
@@ -37,13 +131,12 @@ export function injectStyles() {
     min-width: 260px;
     padding: 0;
     font-size: 13px;
-    color: #e4e4e7;
-    background: #131316;
-    border: 1px solid #27272a;
+    color: var(--ollama-text);
+    background: var(--ollama-surface);
+    border: 1px solid var(--ollama-border);
     border-radius: 14px;
     box-shadow:
-        0 8px 32px rgba(0, 0, 0, 0.5),
-        0 2px 8px rgba(0, 0, 0, 0.3);
+        var(--ollama-shadow);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     overflow: hidden;
     animation: ollama-tip-enter 0.2s cubic-bezier(0.16, 1, 0.3, 1);
@@ -68,13 +161,13 @@ export function injectStyles() {
     justify-content: space-between;
     align-items: center;
     padding: 11px 12px 11px 16px;
-    background: #18181b;
-    border-bottom: 1px solid #27272a;
+    background: var(--ollama-surface-alt);
+    border-bottom: 1px solid var(--ollama-border);
     margin: 0;
 }
 
 #${TIP_ID} .ollama-tip-title {
-    color: #a1a1aa;
+    color: var(--ollama-text-secondary);
     font-size: 12px;
     font-weight: 500;
     letter-spacing: 0.02em;
@@ -83,7 +176,7 @@ export function injectStyles() {
 #${TIP_ID} .ollama-tip-close {
     background: none;
     border: none;
-    color: #52525b;
+    color: var(--ollama-text-disabled);
     cursor: pointer;
     padding: 0;
     width: 26px;
@@ -97,13 +190,13 @@ export function injectStyles() {
     transition: background 0.15s ease, color 0.15s ease;
 }
 #${TIP_ID} .ollama-tip-close:hover {
-    background: #27272a;
-    color: #e4e4e7;
+    background: var(--ollama-border);
+    color: var(--ollama-text);
 }
 
 /* ===== Model label ===== */
 #${TIP_ID} .ollama-tip-model {
-    color: #52525b;
+    color: var(--ollama-text-disabled);
     font-size: 11px;
     padding: 0 16px;
     margin-top: 10px;
@@ -115,9 +208,9 @@ export function injectStyles() {
     width: 100%;
     padding: 8px 10px;
     font-size: 13px;
-    background: #0f0f12;
-    color: #e4e4e7;
-    border: 1px solid #27272a;
+    background: var(--ollama-panel);
+    color: var(--ollama-text);
+    border: 1px solid var(--ollama-border);
     border-radius: 8px;
     outline: none;
     transition: border-color 0.15s ease;
@@ -129,8 +222,8 @@ export function injectStyles() {
     padding-right: 32px;
 }
 #${TIP_ID} .ollama-tip-model-select:focus {
-    border-color: #6366f1;
-    box-shadow: 0 0 0 3px #1e1e3a;
+    border-color: var(--ollama-focus);
+    box-shadow: 0 0 0 3px var(--ollama-focus-ring);
 }
 #${TIP_ID} .ollama-tip-model-select option {
     direction: rtl;
@@ -144,8 +237,8 @@ export function injectStyles() {
     padding: 9px;
     font-size: 13px;
     font-weight: 500;
-    color: #fff;
-    background: linear-gradient(135deg, #6366f1, #7c3aed);
+    color: var(--ollama-button-text);
+    background: var(--ollama-button-gradient);
     border: none;
     border-radius: 8px;
     cursor: pointer;
@@ -179,7 +272,7 @@ export function injectStyles() {
 
 /* ===== Labels ===== */
 #${TIP_ID} .ollama-tip-label {
-    color: #71717a;
+    color: var(--ollama-text-muted);
     font-size: 11px;
     font-weight: 500;
     margin-bottom: 4px;
@@ -191,14 +284,14 @@ export function injectStyles() {
 #${TIP_ID} .ollama-tip-text {
     word-break: break-word;
     white-space: pre-wrap;
-    color: #f4f4f5;
+    color: var(--ollama-text-strong);
     font-size: 13px;
     line-height: 1.6;
 }
 
 /* ===== Loading state ===== */
 #${TIP_ID} .ollama-tip-loading {
-    color: #71717a;
+    color: var(--ollama-text-muted);
     font-size: 12px;
     margin-top: 2px;
 }
@@ -207,7 +300,7 @@ export function injectStyles() {
     height: 10px;
     margin-top: 8px;
     border-radius: 999px;
-    background: linear-gradient(90deg, #27272a, #3f3f46, #27272a);
+    background: var(--ollama-placeholder);
     background-size: 200% 100%;
     animation: ollama-tip-loading 1.5s ease-in-out infinite;
 }
@@ -216,15 +309,14 @@ export function injectStyles() {
 
 /* ===== Error ===== */
 #${TIP_ID} .ollama-tip-error {
-    color: #fca5a5;
+    color: var(--ollama-error-text);
     font-size: 12px;
     line-height: 1.5;
     padding: 8px 10px;
-    background: #1c1517;
-    border: 1px solid #3b1c1c;
+    background: var(--ollama-error-bg);
+    border: 1px solid var(--ollama-error-border);
     border-radius: 8px;
-    border-color: rgba(239, 68, 68, 0.4);
-    border-left: 3px solid #ef4444;
+    border-left: 3px solid var(--ollama-error-border-strong);
 }
 
 /* ===== Copy button ===== */
@@ -233,9 +325,9 @@ export function injectStyles() {
     padding: 6px 14px;
     font-size: 12px;
     font-weight: 500;
-    color: #fff;
-    background: #818cf8;
-    border: 1px solid #6366f1;
+    color: var(--ollama-copy-text);
+    background: var(--ollama-copy-bg);
+    border: 1px solid var(--ollama-copy-border);
     border-radius: 6px;
     cursor: pointer;
     transition: all 0.15s ease;
@@ -245,21 +337,21 @@ export function injectStyles() {
     letter-spacing: 0.01em;
 }
 #${TIP_ID} .ollama-tip-copy:hover {
-    background: #7c7ff0;
-    border-color: #818cf8;
-    color: #fff;
+    background: var(--ollama-copy-bg-hover);
+    border-color: var(--ollama-copy-bg);
+    color: var(--ollama-copy-text);
 }
 
 /* ===== Grammar / Sentence Study Section ===== */
 #${TIP_ID} .ollama-tip-grammar-section {
     margin-top: 14px;
     padding: 14px 16px 14px;
-    border-top: 1px solid #27272a;
-    background: #0f0f12;
+    border-top: 1px solid var(--ollama-border);
+    background: var(--ollama-panel);
 }
 
 #${TIP_ID} .ollama-tip-grammar-pattern {
-    color: #f4f4f5;
+    color: var(--ollama-text-strong);
     font-size: 13px;
     font-weight: 600;
     margin-top: 6px;
@@ -273,7 +365,7 @@ export function injectStyles() {
     overflow-x: auto;
     padding-bottom: 4px;
     scrollbar-width: thin;
-    scrollbar-color: #27272a transparent;
+    scrollbar-color: var(--ollama-scrollbar) transparent;
 }
 #${TIP_ID} .ollama-tip-grammar-parts::-webkit-scrollbar {
     height: 4px;
@@ -282,7 +374,7 @@ export function injectStyles() {
     background: transparent;
 }
 #${TIP_ID} .ollama-tip-grammar-parts::-webkit-scrollbar-thumb {
-    background: #27272a;
+    background: var(--ollama-scrollbar);
     border-radius: 2px;
 }
 
@@ -291,17 +383,17 @@ export function injectStyles() {
     width: fit-content;
     max-width: min(230px, calc(100vw - 96px));
     padding: 10px 12px;
-    background: #1a1a2e;
-    border: 1px solid #2a2a4a;
+    background: var(--ollama-grammar-bg);
+    border: 1px solid var(--ollama-border-soft);
     border-radius: 10px;
     transition: border-color 0.15s ease;
 }
 #${TIP_ID} .ollama-tip-grammar-part:hover {
-    border-color: #3a3a5c;
+    border-color: var(--ollama-border-soft-hover);
 }
 
 #${TIP_ID} .ollama-tip-grammar-text {
-    color: #f4f4f5;
+    color: var(--ollama-text-strong);
     font-size: 13px;
     line-height: 1.5;
     word-break: break-word;
@@ -309,7 +401,7 @@ export function injectStyles() {
 }
 
 #${TIP_ID} .ollama-tip-grammar-translation {
-    color: #a1a1aa;
+    color: var(--ollama-text-secondary);
     font-size: 12px;
     line-height: 1.45;
     margin-top: 5px;
@@ -320,7 +412,7 @@ export function injectStyles() {
     width: 100%;
     height: 1px;
     margin: 8px 0;
-    background: linear-gradient(90deg, #6366f1, #2a2a4a);
+    background: var(--ollama-grammar-line);
 }
 
 #${TIP_ID} .ollama-tip-grammar-role {
@@ -329,22 +421,22 @@ export function injectStyles() {
     gap: 4px;
     padding: 3px 9px;
     border-radius: 999px;
-    background: #1e1e3a;
-    color: #a5b4fc;
+    background: var(--ollama-grammar-role-bg);
+    color: var(--ollama-grammar-role-text);
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.02em;
 }
 
 #${TIP_ID} .ollama-tip-grammar-note {
-    color: #71717a;
+    color: var(--ollama-text-muted);
     font-size: 11px;
     line-height: 1.45;
     margin-top: 6px;
 }
 
 #${TIP_ID} .ollama-tip-grammar-empty {
-    color: #71717a;
+    color: var(--ollama-text-muted);
     font-size: 12px;
     line-height: 1.5;
     margin-top: 6px;
@@ -361,12 +453,12 @@ export function injectStyles() {
     padding: 10px 20px;
     font-size: 13px;
     font-weight: 500;
-    color: #e4e4e7;
-    background: #131316;
-    border: 1px solid #27272a;
+    color: var(--ollama-text);
+    background: var(--ollama-surface);
+    border: 1px solid var(--ollama-border);
     border-radius: 10px;
     box-shadow:
-        0 8px 24px rgba(0, 0, 0, 0.5);
+        var(--ollama-shortcut-shadow);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     pointer-events: none;
     animation: ollama-tip-enter 0.2s cubic-bezier(0.16, 1, 0.3, 1);

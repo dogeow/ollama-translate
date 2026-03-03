@@ -1,5 +1,6 @@
 /* ===== Popup Design Tokens (matches options.css) ===== */
 :root {
+  color-scheme: dark;
   --bg-base: #09090b;
   --bg-surface: #131316;
   --bg-elevated: #1a1a1f;
@@ -7,6 +8,7 @@
 
   --border-default: #27272a;
   --border-focus: #6366f1;
+  --border-strong: #333333;
 
   --text-primary: #fafafa;
   --text-secondary: #a1a1aa;
@@ -20,6 +22,11 @@
 
   --warning: #f59e0b;
   --warning-bg: rgba(245, 158, 11, 0.1);
+  --warning-text: #fcd34d;
+  --warning-strong: #fbbf24;
+  --warning-border: rgba(245, 158, 11, 0.25);
+
+  --on-accent: #ffffff;
 
   --radius-sm: 6px;
   --radius-md: 8px;
@@ -29,6 +36,38 @@
   --shadow-glow: 0 0 20px var(--accent-glow);
 
   --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg-base: #f4f7fb;
+    --bg-surface: #ffffff;
+    --bg-elevated: #f8fafc;
+    --bg-hover: #eef2ff;
+
+    --border-default: #d6dce8;
+    --border-focus: #4f46e5;
+    --border-strong: #c5cedb;
+
+    --text-primary: #111827;
+    --text-secondary: #374151;
+    --text-muted: #6b7280;
+    --text-disabled: #94a3b8;
+
+    --accent: #4f46e5;
+    --accent-light: #4338ca;
+    --accent-glow: rgba(79, 70, 229, 0.12);
+    --accent-gradient: linear-gradient(135deg, #4f46e5, #7c3aed);
+
+    --warning: #d97706;
+    --warning-bg: rgba(217, 119, 6, 0.12);
+    --warning-text: #b45309;
+    --warning-strong: #c2410c;
+    --warning-border: rgba(217, 119, 6, 0.2);
+
+    --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  }
 }
 
 /* ===== Reset ===== */
@@ -71,7 +110,7 @@ body {
 .popup-update-banner {
   margin-bottom: 16px;
   padding: 14px;
-  border: 1px solid rgba(245, 158, 11, 0.25);
+  border: 1px solid var(--warning-border);
   border-radius: var(--radius-lg);
   background: var(--warning-bg);
 }
@@ -79,13 +118,13 @@ body {
 .popup-update-banner__title {
   font-size: 13px;
   font-weight: 600;
-  color: #fbbf24;
+  color: var(--warning-strong);
   margin-bottom: 4px;
 }
 
 .popup-update-banner__text {
   font-size: 12px;
-  color: #fcd34d;
+  color: var(--warning-text);
   margin-bottom: 10px;
   line-height: 1.5;
 }
@@ -114,7 +153,7 @@ body {
 
 .link-card:hover {
   background: var(--bg-elevated);
-  border-color: #333;
+  border-color: var(--border-strong);
   color: var(--text-primary);
 }
 
@@ -196,7 +235,7 @@ body {
 
 .btn-primary {
   background: var(--accent-gradient);
-  color: white;
+  color: var(--on-accent);
 }
 
 .btn-primary:hover {
@@ -212,7 +251,7 @@ body {
 .btn-secondary:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
-  border-color: #333;
+  border-color: var(--border-strong);
   box-shadow: none;
 }
 
