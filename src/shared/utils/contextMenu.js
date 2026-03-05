@@ -6,14 +6,18 @@ import {
   normalizeAutoTranslateMode,
   normalizeHoverTranslateScope,
 } from "../settings.js";
-import { DEFAULT_APP_ENABLED } from "../constants.js";
+import {
+  DEFAULT_APP_ENABLED,
+  AUTO_TRANSLATE_MODE_OPTIONS,
+  HOVER_TRANSLATE_SCOPE_OPTIONS,
+} from "../constants.js";
 
 // Context menu IDs
 export const MENU_TRANSLATE_SELECTION = "ollama-translate";
 export const MENU_TRANSLATE_PAGE = "ollama-translate-page";
 export const MENU_OPEN_OPTIONS = "ollama-open-options";
 export const MENU_AUTO_MODE_PARENT = "ollama-auto-translate-mode";
-export const MENU_AUTO_MODE_OFF = "ollama-auto-translate-mode-off";
+export const MENU_AUTO_MODE_HOTKEY = "ollama-auto-translate-mode-hotkey";
 export const MENU_AUTO_MODE_SELECTION = "ollama-auto-translate-mode-selection";
 export const MENU_AUTO_MODE_HOVER = "ollama-auto-translate-mode-hover";
 export const MENU_HOVER_SCOPE_PARENT = "ollama-hover-translate-scope";
@@ -27,7 +31,7 @@ export const MENU_HOVER_SCOPE_PARAGRAPH =
  */
 export async function readMenuSettings() {
   const stored = await chrome.storage.sync.get({
-    ollamaAutoTranslateMode: "off",
+    ollamaAutoTranslateMode: "hotkey",
     ollamaAutoTranslateSelection: false,
     ollamaHoverTranslateScope: "word",
     ollamaAppEnabled: DEFAULT_APP_ENABLED,
@@ -78,31 +82,22 @@ export async function createContextMenus() {
     contexts: ["action"],
   });
 
-  chrome.contextMenus.create({
-    id: MENU_AUTO_MODE_OFF,
-    parentId: MENU_AUTO_MODE_PARENT,
-    title: "关闭自动翻译",
-    type: "radio",
-    checked: autoTranslateMode === "off",
-    contexts: ["action"],
-  });
+  // 动态创建自动翻译模式菜单项
+  const autoModeMenuIds = {
+    hotkey: MENU_AUTO_MODE_HOTKEY,
+    selection: MENU_AUTO_MODE_SELECTION,
+    hover: MENU_AUTO_MODE_HOVER,
+  };
 
-  chrome.contextMenus.create({
-    id: MENU_AUTO_MODE_SELECTION,
-    parentId: MENU_AUTO_MODE_PARENT,
-    title: "双击 / 三击后翻译",
-    type: "radio",
-    checked: autoTranslateMode === "selection",
-    contexts: ["action"],
-  });
-
-  chrome.contextMenus.create({
-    id: MENU_AUTO_MODE_HOVER,
-    parentId: MENU_AUTO_MODE_PARENT,
-    title: "悬停自动翻译",
-    type: "radio",
-    checked: autoTranslateMode === "hover",
-    contexts: ["action"],
+  AUTO_TRANSLATE_MODE_OPTIONS.forEach((option) => {
+    chrome.contextMenus.create({
+      id: autoModeMenuIds[option.value],
+      parentId: MENU_AUTO_MODE_PARENT,
+      title: option.title,
+      type: "radio",
+      checked: autoTranslateMode === option.value,
+      contexts: ["action"],
+    });
   });
 
   chrome.contextMenus.create({
@@ -111,21 +106,20 @@ export async function createContextMenus() {
     contexts: ["action"],
   });
 
-  chrome.contextMenus.create({
-    id: MENU_HOVER_SCOPE_WORD,
-    parentId: MENU_HOVER_SCOPE_PARENT,
-    title: "只翻译单词",
-    type: "radio",
-    checked: hoverTranslateScope === "word",
-    contexts: ["action"],
-  });
+  // 动态创建悬停范围菜单项
+  const hoverScopeMenuIds = {
+    word: MENU_HOVER_SCOPE_WORD,
+    paragraph: MENU_HOVER_SCOPE_PARAGRAPH,
+  };
 
-  chrome.contextMenus.create({
-    id: MENU_HOVER_SCOPE_PARAGRAPH,
-    parentId: MENU_HOVER_SCOPE_PARENT,
-    title: "翻译整段话",
-    type: "radio",
-    checked: hoverTranslateScope === "paragraph",
-    contexts: ["action"],
+  HOVER_TRANSLATE_SCOPE_OPTIONS.forEach((option) => {
+    chrome.contextMenus.create({
+      id: hoverScopeMenuIds[option.value],
+      parentId: MENU_HOVER_SCOPE_PARENT,
+      title: option.title,
+      type: "radio",
+      checked: hoverTranslateScope === option.value,
+      contexts: ["action"],
+    });
   });
 }

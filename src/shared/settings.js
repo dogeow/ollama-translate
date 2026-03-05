@@ -153,10 +153,10 @@ export function getMiniMaxApiKeyLabel(input) {
  * 规范化自动翻译模式
  * @param {string} mode - 翻译模式
  * @param {boolean} legacySelection - 兼容旧版 selection 设置
- * @returns {string} 规范化后的模式：'selection' | 'hover' | 'off'
+ * @returns {string} 规范化后的模式：'selection' | 'hover' | 'hotkey'
  */
 export function normalizeAutoTranslateMode(mode, legacySelection = false) {
-  if (mode === "selection" || mode === "hover" || mode === "off") return mode;
+  if (mode === "selection" || mode === "hover" || mode === "hotkey") return mode;
   return legacySelection ? "selection" : DEFAULT_SETTINGS.autoTranslateMode;
 }
 

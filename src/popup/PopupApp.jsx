@@ -2,6 +2,10 @@ import { useEffect, useState } from "react";
 import { createDefaultUpdateState, UPDATE_STATE_KEY } from "../shared/update.js";
 import { TRANSLATE_PROVIDER_OPTIONS } from "../options/lib/constants.js";
 import {
+  AUTO_TRANSLATE_MODE_OPTIONS,
+  HOVER_TRANSLATE_SCOPE_OPTIONS,
+} from "../shared/constants.js";
+import {
   AppToggle,
   UpdateBanner,
   Panel,
@@ -12,36 +16,16 @@ import {
   usePageTranslate,
 } from "./hooks/usePopupSettings.js";
 
-const AUTO_MODE_OPTIONS = [
-  {
-    value: "off",
-    title: "关闭自动翻译",
-    hint: "只保留右键、快捷键和手动触发。",
-  },
-  {
-    value: "selection",
-    title: "双击 / 三击",
-    hint: "双击单词或三击整段后立即翻译。",
-  },
-  {
-    value: "hover",
-    title: "悬停取词",
-    hint: "鼠标停留在文本上时自动触发翻译。",
-  },
-];
+// 为 popup 创建简洁版选项（使用 shortTitle）
+const AUTO_MODE_OPTIONS = AUTO_TRANSLATE_MODE_OPTIONS.map(option => ({
+  value: option.value,
+  title: option.shortTitle,
+}));
 
-const HOVER_SCOPE_OPTIONS = [
-  {
-    value: "word",
-    title: "只翻译单词",
-    hint: "更轻量，适合看英文文章。",
-  },
-  {
-    value: "paragraph",
-    title: "翻译整段话",
-    hint: "适合整段阅读和快速理解上下文。",
-  },
-];
+const HOVER_SCOPE_OPTIONS = HOVER_TRANSLATE_SCOPE_OPTIONS.map(option => ({
+  value: option.value,
+  title: option.title,
+}));
 
 export function PopupApp() {
   const currentVersion = chrome.runtime.getManifest().version;
@@ -78,21 +62,33 @@ export function PopupApp() {
 
   return (
     <div className="popup">
-      <div className="popup-hero">
-        <div className="popup-hero__top">
-          <div className="popup-hero__title-group">
-            <h1>Ollama 翻译</h1>
-            <AppToggle
-              enabled={popupSettings.appEnabled}
-              onToggle={popupSettings.toggleAppEnabled}
-            />
-          </div>
-          <button type="button" className="btn btn-secondary btn-inline" onClick={openOptionsPage}>
-            打开设置
-          </button>
+      <header className="popup-hero">
+        <div className="popup-hero__title-group">
+          <h1>Ollama 翻译</h1>
         </div>
-        <div className="popup-hero__eyebrow">快捷面板</div>
-        <p className="desc">在这里快速切换自动翻译模式，不用再进设置页。</p>
+        <button
+          type="button"
+          className="btn btn-secondary btn-inline popup-settings-btn"
+          onClick={openOptionsPage}
+        >
+          设置
+        </button>
+      </header>
+      <div className="popup-toolbar">
+        <AppToggle
+          enabled={popupSettings.appEnabled}
+          onToggle={popupSettings.toggleAppEnabled}
+        />
+        <div
+          className={`popup-toolbar__state${popupSettings.isSaving ? " is-saving" : ""}`}
+          aria-live="polite"
+        >
+          {popupSettings.isSaving
+            ? "同步中..."
+            : popupSettings.appEnabled
+              ? "服务已启用"
+              : "服务已停用"}
+        </div>
       </div>
       {updateState.status === "available" && (
         <UpdateBanner
@@ -102,8 +98,7 @@ export function PopupApp() {
         />
       )}
       <Panel
-        title="整页翻译"
-        hint="可视区域优先，滚动到哪翻译到哪。"
+        title="快速操作"
         isSubtle
       >
         <button
@@ -115,30 +110,31 @@ export function PopupApp() {
           {pageTranslate.isStarting ? "启动中..." : "开始整页翻译"}
         </button>
         {pageTranslate.status && (
-          <div className="popup-page-translate-status">{pageTranslate.status}</div>
+          <div className="popup-page-translate-status" role="status">
+            {pageTranslate.status}
+          </div>
         )}
-      </Panel>
-      <Panel
-        title="API 厂家"
-        hint="翻译请求将发送到选中的厂家。"
-        isSubtle
-        showStatus={popupSettings.isSaving}
-      >
-        <select
-          className="popup-provider-select"
-          value={popupSettings.provider}
-          onChange={(e) => popupSettings.updateProvider(e.target.value)}
-        >
-          {TRANSLATE_PROVIDER_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        <div className="popup-field">
+          <label className="popup-field__label" htmlFor="popup-provider-select">
+            API 厂家
+          </label>
+          <select
+            id="popup-provider-select"
+            className="popup-provider-select"
+            value={popupSettings.provider}
+            onChange={(e) => popupSettings.updateProvider(e.target.value)}
+          >
+            {TRANSLATE_PROVIDER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </Panel>
       <Panel
         title="自动翻译模式"
-        hint="右键扩展图标也能快速切换。"
+        className="popup-panel--mode"
       >
         <ChoiceGrid
           options={AUTO_MODE_OPTIONS}
@@ -149,7 +145,6 @@ export function PopupApp() {
       {popupSettings.autoTranslateMode === "hover" && (
         <Panel
           title="悬停取词范围"
-          hint="决定 hover 自动翻译时发送给 Ollama 的文本范围。"
           isSubtle
         >
           <ChoiceGrid

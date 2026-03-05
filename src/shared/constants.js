@@ -37,11 +37,52 @@ export const MINIMAX_MODEL_OPTIONS = [DEFAULT_MINIMAX_MODEL];
 
 // 翻译配置
 export const DEFAULT_TRANSLATE_TARGET_LANG = "Chinese";
-export const DEFAULT_AUTO_TRANSLATE_MODE = "off";
+export const DEFAULT_AUTO_TRANSLATE_MODE = "hotkey";
 export const DEFAULT_HOVER_TRANSLATE_SCOPE = "word";
 export const DEFAULT_HOVER_TRANSLATE_DELAY_MS = 200;
 export const DEFAULT_PAGE_TRANSLATE_CONCURRENCY = 1;
 export const DEFAULT_PAGE_TRANSLATE_BATCH_SIZE = 8;
+
+// 自动翻译模式选项（统一定义，避免重复）
+export const AUTO_TRANSLATE_MODE_OPTIONS = [
+  {
+    value: "hotkey",
+    title: "热键翻译",
+    shortTitle: "热键翻译", // popup 简洁版
+    description: "仅保留手动快捷键、右键菜单和选区按钮。",
+    hint: "只保留右键、快捷键和手动触发。",
+  },
+  {
+    value: "selection",
+    title: "双击 / 三击后翻译",
+    shortTitle: "双击 / 三击", // popup 简洁版
+    description: "双击单词或三击整段后自动翻译，适合基于选区的操作方式。",
+    hint: "双击单词或三击整段后立即翻译。",
+  },
+  {
+    value: "hover",
+    title: "悬停自动翻译",
+    shortTitle: "悬停取词", // popup 简洁版
+    description: "鼠标移动到文本上后自动取词或取整段，无需双击或按快捷键。",
+    hint: "鼠标停留在文本上时自动触发翻译。",
+  },
+];
+
+// 悬停翻译范围选项
+export const HOVER_TRANSLATE_SCOPE_OPTIONS = [
+  {
+    value: "word",
+    label: "只翻译单词",
+    title: "只翻译单词",
+    hint: "更轻量，适合看英文文章。",
+  },
+  {
+    value: "paragraph",
+    label: "翻译整段话",
+    title: "翻译整段话",
+    hint: "适合整段阅读和快速理解上下文。",
+  },
+];
 
 // 功能开关
 export const DEFAULT_LEARNING_MODE_ENABLED = false;

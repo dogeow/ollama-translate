@@ -147,7 +147,7 @@ function initContentScript() {
         batchSize: pageTranslateBatchSize,
       });
     }
-    if (autoTranslateMode !== "off") hideButton();
+    if (autoTranslateMode !== "hotkey") hideButton();
     clearSelectionAutoTranslateTimer();
     clearHoverAutoTranslateTimer({ preserveLastResolved: true });
   }
@@ -429,7 +429,7 @@ function initContentScript() {
       hideButton();
       return;
     }
-    if (autoTranslateMode !== "off") {
+    if (autoTranslateMode !== "hotkey") {
       // 开启任一自动模式时，不显示选区悬浮「翻译」按钮
       hideButton();
       return;

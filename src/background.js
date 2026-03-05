@@ -51,7 +51,7 @@ import {
   MENU_TRANSLATE_SELECTION,
   MENU_TRANSLATE_PAGE,
   MENU_OPEN_OPTIONS,
-  MENU_AUTO_MODE_OFF,
+  MENU_AUTO_MODE_HOTKEY,
   MENU_AUTO_MODE_SELECTION,
   MENU_AUTO_MODE_HOVER,
   MENU_HOVER_SCOPE_WORD,
@@ -611,7 +611,7 @@ chrome.commands.onCommand.addListener(async (command) => {
 });
 
 const AUTO_MODE_MENU_MAP = {
-  [MENU_AUTO_MODE_OFF]: { key: "ollamaAutoTranslateMode", value: "off" },
+  [MENU_AUTO_MODE_HOTKEY]: { key: "ollamaAutoTranslateMode", value: "hotkey" },
   [MENU_AUTO_MODE_SELECTION]: {
     key: "ollamaAutoTranslateMode",
     value: "selection",

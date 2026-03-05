@@ -26,7 +26,7 @@ export function ChoiceCard({
       onClick={() => onClick(value)}
     >
       <div className="popup-choice-card__title">{title}</div>
-      <div className="popup-choice-card__hint">{hint}</div>
+      {hint ? <div className="popup-choice-card__hint">{hint}</div> : null}
     </button>
   );
 }

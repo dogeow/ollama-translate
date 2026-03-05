@@ -7,31 +7,12 @@ import {
   normalizePageTranslateConcurrency,
   normalizePageTranslateBatchSize,
 } from "../../shared/settings.js";
-import { SHORTCUTS_URL } from "../../shared/constants.js";
+import {
+  AUTO_TRANSLATE_MODE_OPTIONS,
+  HOVER_TRANSLATE_SCOPE_OPTIONS,
+  SHORTCUTS_URL,
+} from "../../shared/constants.js";
 import { tabsCreate } from "../lib/chrome.js";
-
-const AUTO_TRANSLATE_MODE_OPTIONS = [
-  {
-    value: "off",
-    title: "关闭自动翻译",
-    description: "仅保留手动快捷键、右键菜单和选区按钮。",
-  },
-  {
-    value: "selection",
-    title: "双击 / 三击选中后自动翻译",
-    description: "双击单词或三击整段后自动翻译，适合基于选区的操作方式。",
-  },
-  {
-    value: "hover",
-    title: "悬停自动翻译",
-    description: "鼠标移动到文本上后自动取词或取整段，无需双击或按快捷键。",
-  },
-];
-
-const HOVER_SCOPE_OPTIONS = [
-  { value: "word", label: "只翻译单词" },
-  { value: "paragraph", label: "翻译整段话" },
-];
 
 export function ShortcutsTab({
   settings,
