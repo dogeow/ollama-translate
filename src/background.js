@@ -49,361 +49,43 @@ import {
   generateMiniMaxStreamingCompletion,
   normalizeMiniMaxBaseUrl,
 } from "./shared/minimax-api.js";
+import {
+  normalizeDisplayText,
+  splitThinkingFromText,
+  mergeThinking,
+  buildTranslatePrompt,
+  buildPageBatchTranslatePrompt,
+  extractDisplayTranslation,
+  parsePageBatchTranslations,
+  isRateLimitError,
+} from "./shared/utils/textProcessing.js";
+import {
+  createContextMenus,
+  readMenuSettings,
+  MENU_TRANSLATE_SELECTION,
+  MENU_TRANSLATE_PAGE,
+  MENU_OPEN_OPTIONS,
+  MENU_AUTO_MODE_PARENT,
+  MENU_AUTO_MODE_OFF,
+  MENU_AUTO_MODE_SELECTION,
+  MENU_AUTO_MODE_HOVER,
+  MENU_HOVER_SCOPE_PARENT,
+  MENU_HOVER_SCOPE_WORD,
+  MENU_HOVER_SCOPE_PARAGRAPH,
+} from "./shared/utils/contextMenu.js";
+import {
+  sendTranslatePending,
+  sendTranslateResult,
+  buildPendingTranslatePayload,
+  persistTranslateResult,
+  createTranslateRequestId,
+  buildErrorResult,
+  openResultWindow,
+  triggerVisualPageTranslate,
+} from "./shared/utils/messaging.js";
 
 const LOG_PREFIX = "[Ollama 翻译]";
-const MENU_TRANSLATE_SELECTION = "ollama-translate";
-const MENU_TRANSLATE_PAGE = "ollama-translate-page";
-const MENU_OPEN_OPTIONS = "ollama-open-options";
-const MENU_AUTO_MODE_PARENT = "ollama-auto-translate-mode";
-const MENU_AUTO_MODE_OFF = "ollama-auto-translate-mode-off";
-const MENU_AUTO_MODE_SELECTION = "ollama-auto-translate-mode-selection";
-const MENU_AUTO_MODE_HOVER = "ollama-auto-translate-mode-hover";
-const MENU_HOVER_SCOPE_PARENT = "ollama-hover-translate-scope";
-const MENU_HOVER_SCOPE_WORD = "ollama-hover-translate-scope-word";
-const MENU_HOVER_SCOPE_PARAGRAPH = "ollama-hover-translate-scope-paragraph";
-const THINK_BLOCK_RE = /<think\b[^>]*>([\s\S]*?)<\/think>/gi;
-const THINK_OPEN_TAG_RE = /<think\b[^>]*>/i;
-const THINK_ANY_TAG_RE = /<\/?think\b[^>]*>/i;
-const RATE_LIMIT_ERROR_RE = /(?:\b429\b|rate[ -]?limit|too many requests|usage limit|quota)/i;
 const MIN_THINK_PREVIEW_MS = 320;
-
-function normalizeDisplayText(text) {
-  return String(text || "")
-    .replace(/\r\n/g, "\n")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-function splitThinkingFromText(text) {
-  const raw = String(text || "");
-  if (!raw) return { translation: "", thinking: "" };
-
-  const thinkParts = [];
-  let stripped = raw.replace(THINK_BLOCK_RE, (_, inner = "") => {
-    const cleaned = normalizeDisplayText(inner);
-    if (cleaned) thinkParts.push(cleaned);
-    return "\n";
-  });
-
-  const danglingMatch = THINK_OPEN_TAG_RE.exec(stripped);
-  if (danglingMatch) {
-    const dangling = normalizeDisplayText(
-      stripped.slice(danglingMatch.index).replace(THINK_OPEN_TAG_RE, ""),
-    );
-    if (dangling) thinkParts.push(dangling);
-    stripped = stripped.slice(0, danglingMatch.index);
-  }
-
-  return {
-    translation: normalizeDisplayText(stripped),
-    thinking: normalizeDisplayText(thinkParts.join("\n\n")),
-  };
-}
-
-function mergeThinking(...segments) {
-  const uniqueSegments = [];
-  segments.forEach((segment) => {
-    const value = normalizeDisplayText(segment);
-    if (!value) return;
-    if (uniqueSegments.includes(value)) return;
-    uniqueSegments.push(value);
-  });
-
-  return uniqueSegments.join("\n\n");
-}
-
-function buildTranslatePrompt(text, targetLang) {
-  return `Translate the following text to ${targetLang}. Only output the translation, no explanation or extra text.\n\n${text}`;
-}
-
-function buildPageBatchTranslatePrompt(texts, targetLang) {
-  return [
-    `Translate each item in the JSON array to ${targetLang}.`,
-    "Rules:",
-    "1. Keep the same order and item count.",
-    "2. Return ONLY a valid JSON array of strings.",
-    "3. Do not include markdown, comments, or extra fields.",
-    "4. Preserve placeholders, numbers, and URLs.",
-    "",
-    "Input JSON:",
-    JSON.stringify(texts),
-  ].join("\n");
-}
-
-function extractDisplayTranslation(rawText) {
-  const raw = String(rawText ?? "");
-  if (!raw.trim()) return "";
-
-  const parsed = splitThinkingFromText(raw);
-  const cleaned = normalizeDisplayText(parsed.translation);
-  if (cleaned) return cleaned;
-
-  if (THINK_ANY_TAG_RE.test(raw)) {
-    // 包含 think 标签但无有效译文时，宁可返回空，避免把思考内容写回页面
-    return "";
-  }
-
-  return normalizeDisplayText(raw);
-}
-
-function normalizeBatchTranslationItem(item) {
-  if (typeof item === "string") {
-    return extractDisplayTranslation(item);
-  }
-  if (item && typeof item === "object") {
-    const text = String(
-      item.translation || item.translated || item.text || "",
-    ).trim();
-    if (!text) return "";
-    return extractDisplayTranslation(text);
-  }
-  return "";
-}
-
-function extractFirstJsonArrayString(rawText) {
-  const source = String(rawText || "");
-  if (!source) return "";
-
-  let inString = false;
-  let escaped = false;
-  let depth = 0;
-  let start = -1;
-
-  for (let i = 0; i < source.length; i += 1) {
-    const char = source[i];
-
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (char === "\\") {
-        escaped = true;
-      } else if (char === "\"") {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (char === "\"") {
-      inString = true;
-      continue;
-    }
-
-    if (char === "[") {
-      if (depth === 0) start = i;
-      depth += 1;
-      continue;
-    }
-
-    if (char === "]" && depth > 0) {
-      depth -= 1;
-      if (depth === 0 && start >= 0) {
-        return source.slice(start, i + 1);
-      }
-    }
-  }
-
-  return "";
-}
-
-function isRateLimitError(errorMessage) {
-  return RATE_LIMIT_ERROR_RE.test(String(errorMessage || ""));
-}
-
-function parsePageBatchTranslations(rawText, expectedCount) {
-  const raw = String(rawText || "").trim();
-  if (!raw || expectedCount <= 0) return [];
-
-  const strippedFence = raw
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-  const jsonCandidates = [
-    raw,
-    strippedFence,
-    extractFirstJsonArrayString(raw),
-    extractFirstJsonArrayString(strippedFence),
-  ].filter(Boolean);
-
-  for (const candidate of jsonCandidates) {
-    if (!candidate) continue;
-    try {
-      const payload = JSON.parse(candidate);
-      const list = Array.isArray(payload)
-        ? payload
-        : Array.isArray(payload?.translations)
-          ? payload.translations
-          : [];
-      if (!Array.isArray(list) || list.length === 0) continue;
-
-      const normalized = list
-        .slice(0, expectedCount)
-        .map(normalizeBatchTranslationItem);
-      if (normalized.length === expectedCount && normalized.every(Boolean)) {
-        return normalized;
-      }
-    } catch (_) {}
-  }
-
-  return [];
-}
-
-async function sendTranslatePending(tabId, payload) {
-  if (!tabId) return;
-  await chrome.tabs
-    .sendMessage(tabId, {
-      action: "showTranslatePending",
-      ...payload,
-    })
-    .catch(() => {});
-}
-
-function buildPendingTranslatePayload({
-  text,
-  targetLang,
-  model,
-  learningModeEnabled,
-  requestId,
-  triggerSource,
-  translation = null,
-  thinking = null,
-  sentenceStudyThinking = null,
-  sentenceStudyPending = false,
-}) {
-  return {
-    original: text,
-    targetLang,
-    model,
-    learningModeEnabled,
-    requestId,
-    triggerSource,
-    translation,
-    thinking,
-    sentenceStudyThinking,
-    sentenceStudyPending,
-  };
-}
-
-async function sendTranslateResult(
-  tabId,
-  payload,
-  action = "showTranslateResult",
-) {
-  if (!tabId) return;
-  await chrome.tabs
-    .sendMessage(tabId, {
-      action,
-      ...payload,
-    })
-    .catch(() => {});
-}
-
-async function persistTranslateResult(result) {
-  await chrome.storage.local.set({
-    [TRANSLATE_RESULT_KEY]: result,
-  });
-}
-
-async function readMenuSettings() {
-  const stored = await chrome.storage.sync.get({
-    ollamaAutoTranslateMode: "off",
-    ollamaAutoTranslateSelection: false,
-    ollamaHoverTranslateScope: "word",
-    ollamaAppEnabled: DEFAULT_APP_ENABLED,
-  });
-
-  return {
-    autoTranslateMode: normalizeAutoTranslateMode(
-      stored.ollamaAutoTranslateMode,
-      stored.ollamaAutoTranslateSelection,
-    ),
-    hoverTranslateScope: normalizeHoverTranslateScope(
-      stored.ollamaHoverTranslateScope,
-    ),
-    appEnabled: stored.ollamaAppEnabled,
-  };
-}
-
-async function createContextMenus() {
-  const { autoTranslateMode, hoverTranslateScope } = await readMenuSettings();
-
-  await chrome.contextMenus.removeAll();
-
-  chrome.contextMenus.create({
-    id: MENU_TRANSLATE_SELECTION,
-    title: "Ollama 翻译选中内容",
-    contexts: ["selection"],
-  });
-
-  chrome.contextMenus.create({
-    id: MENU_TRANSLATE_PAGE,
-    title: "Ollama 翻译整个网页（可视区域优先）",
-    contexts: ["page"],
-  });
-
-  chrome.contextMenus.create({
-    id: MENU_OPEN_OPTIONS,
-    title: "打开设置",
-    contexts: ["action"],
-  });
-
-  chrome.contextMenus.create({
-    id: MENU_AUTO_MODE_PARENT,
-    title: "自动翻译模式",
-    contexts: ["action"],
-  });
-
-  chrome.contextMenus.create({
-    id: MENU_AUTO_MODE_OFF,
-    parentId: MENU_AUTO_MODE_PARENT,
-    title: "关闭自动翻译",
-    type: "radio",
-    checked: autoTranslateMode === "off",
-    contexts: ["action"],
-  });
-
-  chrome.contextMenus.create({
-    id: MENU_AUTO_MODE_SELECTION,
-    parentId: MENU_AUTO_MODE_PARENT,
-    title: "双击 / 三击后翻译",
-    type: "radio",
-    checked: autoTranslateMode === "selection",
-    contexts: ["action"],
-  });
-
-  chrome.contextMenus.create({
-    id: MENU_AUTO_MODE_HOVER,
-    parentId: MENU_AUTO_MODE_PARENT,
-    title: "悬停自动翻译",
-    type: "radio",
-    checked: autoTranslateMode === "hover",
-    contexts: ["action"],
-  });
-
-  chrome.contextMenus.create({
-    id: MENU_HOVER_SCOPE_PARENT,
-    title: "悬停取词范围",
-    contexts: ["action"],
-  });
-
-  chrome.contextMenus.create({
-    id: MENU_HOVER_SCOPE_WORD,
-    parentId: MENU_HOVER_SCOPE_PARENT,
-    title: "只翻译单词",
-    type: "radio",
-    checked: hoverTranslateScope === "word",
-    contexts: ["action"],
-  });
-
-  chrome.contextMenus.create({
-    id: MENU_HOVER_SCOPE_PARAGRAPH,
-    parentId: MENU_HOVER_SCOPE_PARENT,
-    title: "翻译整段话",
-    type: "radio",
-    checked: hoverTranslateScope === "paragraph",
-    contexts: ["action"],
-  });
-}
 
 async function persistUpdateState(partialState) {
   const currentVersion = chrome.runtime.getManifest().version;
@@ -535,42 +217,6 @@ async function checkForExtensionUpdate(options = {}) {
       error: error.message || String(error),
     });
   }
-}
-
-function createTranslateRequestId(requestId) {
-  if (requestId) return requestId;
-  return `translate:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
-}
-
-/**
- * 构建翻译错误结果
- */
-function buildErrorResult({
-  original,
-  targetLang,
-  error,
-  model = null,
-  models = null,
-  needModel = false,
-  learningModeEnabled,
-  requestId,
-  triggerSource,
-}) {
-  return {
-    original,
-    translation: null,
-    error,
-    targetLang,
-    model,
-    ...(models && { models }),
-    needModel,
-    learningModeEnabled,
-    sentenceStudy: null,
-    sentenceStudyThinking: null,
-    sentenceStudyPending: false,
-    requestId,
-    triggerSource,
-  };
 }
 
 async function runProviderCompletion({
@@ -1021,42 +667,6 @@ async function translateWithProvider(text, tabId = null, options = {}) {
   }
 
   return result;
-}
-
-function openResultWindow() {
-  const resultUrl = chrome.runtime.getURL("options/index.html#translate");
-  chrome.windows.create({
-    url: resultUrl,
-    type: "popup",
-    width: 480,
-    height: 360,
-  });
-}
-
-async function triggerVisualPageTranslate(tabId) {
-  if (!tabId) return { ok: false, error: "missing_tab" };
-
-  try {
-    const response = await new Promise((resolve) => {
-      chrome.tabs.sendMessage(
-        tabId,
-        { action: "startVisualPageTranslate" },
-        (value) => {
-          if (chrome.runtime.lastError) {
-            resolve({
-              ok: false,
-              error: chrome.runtime.lastError.message,
-            });
-            return;
-          }
-          resolve(value || { ok: true });
-        },
-      );
-    });
-    return response;
-  } catch (error) {
-    return { ok: false, error: error.message || String(error) };
-  }
 }
 
 chrome.runtime.onInstalled.addListener(() => {

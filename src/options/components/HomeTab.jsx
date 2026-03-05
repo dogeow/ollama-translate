@@ -174,7 +174,7 @@ export function HomeTab({
             ) : null}
           </div>
         </div>
-      </div>
+      </Card>
 
       <div className="card">
         <h2>翻译偏好</h2>
