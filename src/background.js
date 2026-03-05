@@ -83,141 +83,16 @@ import {
   openResultWindow,
   triggerVisualPageTranslate,
 } from "./shared/utils/messaging.js";
+import {
+  persistUpdateState,
+  readStoredUpdateState,
+  updateActionBadge,
+  ensureUpdateCheckAlarm,
+  checkForExtensionUpdate,
+} from "./shared/utils/updateManager.js";
 
 const LOG_PREFIX = "[Ollama 翻译]";
 const MIN_THINK_PREVIEW_MS = 320;
-
-async function persistUpdateState(partialState) {
-  const currentVersion = chrome.runtime.getManifest().version;
-  const nextState = {
-    ...createDefaultUpdateState(currentVersion),
-    ...partialState,
-    currentVersion,
-  };
-
-  await chrome.storage.local.set({
-    [UPDATE_STATE_KEY]: nextState,
-  });
-  await updateActionBadge(nextState);
-
-  return nextState;
-}
-
-async function readStoredUpdateState() {
-  const stored = await chrome.storage.local.get(UPDATE_STATE_KEY);
-  return {
-    ...createDefaultUpdateState(chrome.runtime.getManifest().version),
-    ...(stored[UPDATE_STATE_KEY] || {}),
-  };
-}
-
-async function updateActionBadge(updateState) {
-  if (!chrome.action?.setBadgeText) return;
-
-  if (updateState.status === "available") {
-    await chrome.action.setBadgeText({ text: "UP" }).catch(() => {});
-    await chrome.action
-      .setBadgeBackgroundColor({ color: "#dc2626" })
-      .catch(() => {});
-    await chrome.action
-      .setTitle({
-        title:
-          `Ollama 翻译快捷面板\n发现新版本 ${updateState.latestVersion || ""}`.trim(),
-      })
-      .catch(() => {});
-    return;
-  }
-
-  await chrome.action.setBadgeText({ text: "" }).catch(() => {});
-  await chrome.action
-    .setTitle({
-      title: "Ollama 翻译快捷面板",
-    })
-    .catch(() => {});
-}
-
-async function ensureUpdateCheckAlarm() {
-  if (!chrome.alarms) return;
-
-  await chrome.alarms.clear(UPDATE_CHECK_ALARM_NAME);
-
-  if (!UPDATE_MANIFEST_URL) {
-    return;
-  }
-
-  await chrome.alarms.create(UPDATE_CHECK_ALARM_NAME, {
-    delayInMinutes: 1,
-    periodInMinutes: UPDATE_CHECK_PERIOD_MINUTES,
-  });
-}
-
-async function checkForExtensionUpdate(options = {}) {
-  const { markChecking = false } = options;
-  const currentVersion = chrome.runtime.getManifest().version;
-  const manifestUrl = UPDATE_MANIFEST_URL;
-
-  if (!manifestUrl) {
-    return persistUpdateState({
-      status: "error",
-      manifestUrl,
-      checkedAt: 0,
-      latestVersion: "",
-      updateUrl: "",
-      notes: "",
-      error: "",
-    });
-  }
-
-  if (markChecking) {
-    await persistUpdateState({
-      status: "checking",
-      manifestUrl,
-      checkedAt: Date.now(),
-      latestVersion: "",
-      updateUrl: "",
-      notes: "",
-      error: "",
-    });
-  }
-
-  try {
-    const response = await fetch(manifestUrl, {
-      method: "GET",
-      cache: "no-store",
-      headers: { Accept: "application/json" },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const payload = readUpdateFeed(await response.json());
-    const comparison = compareExtensionVersions(
-      payload.version,
-      currentVersion,
-    );
-
-    return persistUpdateState({
-      status: comparison > 0 ? "available" : "up-to-date",
-      manifestUrl,
-      latestVersion: payload.version,
-      updateUrl: payload.updateUrl,
-      notes: payload.notes,
-      checkedAt: Date.now(),
-      error: "",
-    });
-  } catch (error) {
-    return persistUpdateState({
-      status: "error",
-      manifestUrl,
-      latestVersion: "",
-      updateUrl: "",
-      notes: "",
-      checkedAt: Date.now(),
-      error: error.message || String(error),
-    });
-  }
-}
 
 async function runProviderCompletion({
   provider,
