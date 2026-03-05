@@ -8,18 +8,7 @@ import {
   hydrateSentenceStudyTranslations,
 } from "./background/sentenceStudy.js";
 import {
-  compareExtensionVersions,
-  createDefaultUpdateState,
-  readUpdateFeed,
-  UPDATE_CHECK_ALARM_NAME,
-  UPDATE_CHECK_PERIOD_MINUTES,
-  UPDATE_MANIFEST_URL,
-  UPDATE_STATE_KEY,
-} from "./shared/update.js";
-import {
-  normalizeAutoTranslateMode,
   getMiniMaxApiKeyLabel,
-  normalizeHoverTranslateScope,
   normalizePageTranslateBatchSize,
   resolveMiniMaxApiKey,
   normalizeTranslateProvider,
@@ -37,11 +26,9 @@ import {
   DEFAULT_MINIMAX_REGION,
   DEFAULT_MINIMAX_MODEL,
   DEFAULT_TRANSLATE_TARGET_LANG,
-  DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
   DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
   DEFAULT_LEARNING_MODE_ENABLED,
   DEFAULT_APP_ENABLED,
-  TRANSLATE_RESULT_KEY,
 } from "./shared/constants.js";
 import { getOllamaErrorMessage } from "./shared/ollama-errors.js";
 import {
@@ -61,15 +48,12 @@ import {
 } from "./shared/utils/textProcessing.js";
 import {
   createContextMenus,
-  readMenuSettings,
   MENU_TRANSLATE_SELECTION,
   MENU_TRANSLATE_PAGE,
   MENU_OPEN_OPTIONS,
-  MENU_AUTO_MODE_PARENT,
   MENU_AUTO_MODE_OFF,
   MENU_AUTO_MODE_SELECTION,
   MENU_AUTO_MODE_HOVER,
-  MENU_HOVER_SCOPE_PARENT,
   MENU_HOVER_SCOPE_WORD,
   MENU_HOVER_SCOPE_PARAGRAPH,
 } from "./shared/utils/contextMenu.js";
@@ -84,11 +68,10 @@ import {
   triggerVisualPageTranslate,
 } from "./shared/utils/messaging.js";
 import {
-  persistUpdateState,
   readStoredUpdateState,
-  updateActionBadge,
   ensureUpdateCheckAlarm,
   checkForExtensionUpdate,
+  UPDATE_CHECK_ALARM_NAME,
 } from "./shared/utils/updateManager.js";
 
 const LOG_PREFIX = "[Ollama 翻译]";
@@ -128,7 +111,6 @@ async function translatePageBatchWithProvider(texts) {
     ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
     ollamaAppEnabled: DEFAULT_APP_ENABLED,
     ollamaPageTranslateBatchSize: DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
-    ollamaPageTranslateConcurrency: DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
   });
 
   const maxBatchSize = normalizePageTranslateBatchSize(

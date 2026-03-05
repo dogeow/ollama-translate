@@ -12,6 +12,9 @@ import {
   UPDATE_STATE_KEY,
 } from "../update.js";
 
+// Re-export for use in background.js
+export { UPDATE_CHECK_ALARM_NAME };
+
 /**
  * Persist update state to local storage and update badge
  * @param {object} partialState - Partial update state
