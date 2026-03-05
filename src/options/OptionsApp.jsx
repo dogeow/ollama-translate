@@ -6,6 +6,7 @@ import { Sidebar } from "./components/Sidebar.jsx";
 import { HomeTab } from "./components/HomeTab.jsx";
 import { TranslateTestTab } from "./components/TranslateTestTab.jsx";
 import { ShortcutsTab } from "./components/ShortcutsTab.jsx";
+import { AiLogsTab } from "./components/AiLogsTab.jsx";
 import { LearningTab } from "./components/LearningTab.jsx";
 import { AboutTab } from "./components/AboutTab.jsx";
 import { useSettings } from "./hooks/useSettings.js";
@@ -160,6 +161,10 @@ export function OptionsApp() {
                 showAutoSaveStatus={showAutoSaveStatus}
                 shortcuts={shortcuts}
               />
+            </div>
+
+            <div className="options-tabs__panel" hidden={activeTab !== "logs"} key="logs">
+              <AiLogsTab />
             </div>
 
             <div className="options-tabs__panel" hidden={activeTab !== "learning"} key="learning">

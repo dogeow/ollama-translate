@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { ShortcutsList } from "./ShortcutsList.jsx";
-import { normalizeHoverTranslateDelayMs } from "../../shared/settings.js";
+import {
+  normalizeHoverTranslateDelayMs,
+  normalizePageTranslateConcurrency,
+  normalizePageTranslateBatchSize,
+} from "../../shared/settings.js";
 import { SHORTCUTS_URL } from "../../shared/constants.js";
 import { tabsCreate } from "../lib/chrome.js";
 
@@ -143,6 +147,92 @@ export function ShortcutsTab({
           </div>
           <span className="hint">
             鼠标停留多久后开始自动翻译，默认 200 毫秒。
+          </span>
+        </div>
+
+        <div className="field">
+          <label htmlFor="pageTranslateConcurrency">整页翻译并发</label>
+          <div className="input-with-suffix">
+            <input
+              id="pageTranslateConcurrency"
+              type="number"
+              className="field-input field-input--number"
+              min="1"
+              max="8"
+              step="1"
+              inputMode="numeric"
+              value={settings.ollamaPageTranslateConcurrency}
+              onChange={(event) =>
+                updateSettings(
+                  { ollamaPageTranslateConcurrency: event.target.value },
+                  "debounced",
+                  { delay: 500 },
+                )
+              }
+              onBlur={() => {
+                const normalized = String(
+                  normalizePageTranslateConcurrency(
+                    settingsRef.current.ollamaPageTranslateConcurrency,
+                  ),
+                );
+                const nextSettings = {
+                  ...settingsRef.current,
+                  ollamaPageTranslateConcurrency: normalized,
+                };
+                settingsRef.current = nextSettings;
+                updateSettings(() => nextSettings, "none");
+                void persistSettings(nextSettings).catch((error) => {
+                  console.error("Save settings failed:", error);
+                  showAutoSaveStatus("自动保存失败", true);
+                });
+              }}
+            />
+            <span className="input-suffix">请求</span>
+          </div>
+          <span className="hint">同时发送的整页翻译请求数，默认 2。</span>
+        </div>
+
+        <div className="field">
+          <label htmlFor="pageTranslateBatchSize">整页翻译批量条数</label>
+          <div className="input-with-suffix">
+            <input
+              id="pageTranslateBatchSize"
+              type="number"
+              className="field-input field-input--number"
+              min="1"
+              max="12"
+              step="1"
+              inputMode="numeric"
+              value={settings.ollamaPageTranslateBatchSize}
+              onChange={(event) =>
+                updateSettings(
+                  { ollamaPageTranslateBatchSize: event.target.value },
+                  "debounced",
+                  { delay: 500 },
+                )
+              }
+              onBlur={() => {
+                const normalized = String(
+                  normalizePageTranslateBatchSize(
+                    settingsRef.current.ollamaPageTranslateBatchSize,
+                  ),
+                );
+                const nextSettings = {
+                  ...settingsRef.current,
+                  ollamaPageTranslateBatchSize: normalized,
+                };
+                settingsRef.current = nextSettings;
+                updateSettings(() => nextSettings, "none");
+                void persistSettings(nextSettings).catch((error) => {
+                  console.error("Save settings failed:", error);
+                  showAutoSaveStatus("自动保存失败", true);
+                });
+              }}
+            />
+            <span className="input-suffix">条/批</span>
+          </div>
+          <span className="hint">
+            每次请求合并多少段文本一起翻译，默认 6。数值越大，请求更少但单次响应更慢。
           </span>
         </div>
 

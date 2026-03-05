@@ -8,6 +8,7 @@ import {
   fetchMiniMaxModels,
   testMiniMaxConnection,
 } from "../../shared/minimax-api.js";
+import { isMiniMaxGlobalApiUrl } from "../../shared/settings.js";
 
 /**
  * 管理翻译提供商连接状态的 hook
@@ -43,12 +44,21 @@ export function useConnectionStatus({
     return [{ name: fallbackModel || DEFAULT_MINIMAX_MODEL }];
   }
 
-  function handle403(preserveTestMessage) {
-    setConnectionStatus({
+  function getMiniMaxRegionLabel(apiBaseUrl) {
+    return isMiniMaxGlobalApiUrl(apiBaseUrl) ? "国外" : "国内";
+  }
+
+  function applyConnectionStatus(nextStatus, updateBannerStatus) {
+    if (!updateBannerStatus) return;
+    setConnectionStatus(nextStatus);
+  }
+
+  function handle403({ preserveTestMessage, updateBannerStatus }) {
+    applyConnectionStatus({
       kind: "403",
       text: "Ollama 已运行，但拒绝扩展请求（403）",
       showAction: true,
-    });
+    }, updateBannerStatus);
     setModels([]);
     if (!preserveTestMessage) {
       setTestConnectionResult({
@@ -61,34 +71,48 @@ export function useConnectionStatus({
 
   const updateConnectionStatus = useCallback(
     async (nextSettings, options = {}) => {
-      const { skipModalOnError = false, preserveTestMessage = false } = options;
+      const {
+        skipModalOnError = false,
+        preserveTestMessage = false,
+        suppressTestMessageOnMissingKey = false,
+        updateBannerStatus = true,
+        showTestPending = false,
+      } = options;
       const requestId = ++connectionRequestIdRef.current;
       const provider = getConfig(nextSettings).provider;
       const providerLabel = provider === PROVIDER_MINIMAX ? "MiniMax" : "Ollama";
-      setConnectionStatus({
+      applyConnectionStatus({
         kind: "pending",
         text: `检测 ${providerLabel} 连接中…`,
         showAction: false,
-      });
+      }, updateBannerStatus);
+      if (!preserveTestMessage) {
+        setTestConnectionResult({
+          text: showTestPending ? `检测 ${providerLabel} 连接中…` : "",
+          tone: "",
+          showAction: false,
+        });
+      }
       setModelDropdownOpen(false);
 
-      const { base, model, apiKey } = getConfig(nextSettings);
+      const { base, model, apiKey, apiKeyLabel } = getConfig(nextSettings);
 
       if (provider === PROVIDER_MINIMAX) {
         const fallbackModel = nextSettings.minimaxModel || DEFAULT_MINIMAX_MODEL;
+        const regionLabel = getMiniMaxRegionLabel(base);
         let minimaxModels = getMiniMaxModels(fallbackModel);
         let fetchedFromApi = false;
 
         if (!apiKey) {
-          setConnectionStatus({
+          applyConnectionStatus({
             kind: "err",
-            text: "MiniMax API Key 未填写",
+            text: `${apiKeyLabel || "MiniMax API Key"} 未填写`,
             showAction: false,
-          });
+          }, updateBannerStatus);
           setModels(minimaxModels);
-          if (!preserveTestMessage) {
+          if (!preserveTestMessage && !suppressTestMessageOnMissingKey) {
             setTestConnectionResult({
-              text: "请先填写 MiniMax API Key",
+              text: `请先填写${apiKeyLabel || "MiniMax API Key"}`,
               tone: "err",
               showAction: false,
             });
@@ -114,11 +138,11 @@ export function useConnectionStatus({
           );
           if (requestId !== connectionRequestIdRef.current) return;
 
-          setConnectionStatus({
+          applyConnectionStatus({
             kind: "ok",
-            text: "MiniMax 已连接",
+            text: `MiniMax（${regionLabel}）已连接`,
             showAction: false,
-          });
+          }, updateBannerStatus);
           setModels(minimaxModels);
           setOriginsModalOpen(false);
 
@@ -132,28 +156,13 @@ export function useConnectionStatus({
             });
           }
 
-          const currentModel = nextSettings.minimaxModel;
-          const names = minimaxModels.map((item) => item.name);
-          const selectedModel = names.includes(currentModel)
-            ? currentModel
-            : names[0] || DEFAULT_MINIMAX_MODEL;
-
-          if (selectedModel !== currentModel) {
-            const correctedSettings = {
-              ...settingsRef.current,
-              minimaxModel: selectedModel,
-            };
-            settingsRef.current = correctedSettings;
-            updateSettings(() => correctedSettings, "none");
-            await persistSettings(correctedSettings, { silent: true });
-          }
         } catch (error) {
           if (requestId !== connectionRequestIdRef.current) return;
-          setConnectionStatus({
+          applyConnectionStatus({
             kind: "err",
             text: "MiniMax 未连接",
             showAction: false,
-          });
+          }, updateBannerStatus);
           setModels(minimaxModels);
           if (!preserveTestMessage) {
             setTestConnectionResult({
@@ -172,7 +181,10 @@ export function useConnectionStatus({
         if (requestId !== connectionRequestIdRef.current) return;
 
         if (tagsResponse.status === 403) {
-          handle403(preserveTestMessage);
+          handle403({
+            preserveTestMessage,
+            updateBannerStatus,
+          });
           if (!skipModalOnError) setOriginsModalOpen(true);
           return;
         }
@@ -192,16 +204,19 @@ export function useConnectionStatus({
         if (requestId !== connectionRequestIdRef.current) return;
 
         if (probeResponse.status === 403) {
-          handle403(preserveTestMessage);
+          handle403({
+            preserveTestMessage,
+            updateBannerStatus,
+          });
           if (!skipModalOnError) setOriginsModalOpen(true);
           return;
         }
 
-        setConnectionStatus({
+        applyConnectionStatus({
           kind: "ok",
           text: "Ollama 已运行",
           showAction: false,
-        });
+        }, updateBannerStatus);
         setModels(nextModels);
         setOriginsModalOpen(false);
 
@@ -216,28 +231,13 @@ export function useConnectionStatus({
           });
         }
 
-        const currentModel = nextSettings.ollamaModel;
-        const names = nextModels.map((model) => model.name);
-        const selectedModel = names.includes(currentModel)
-          ? currentModel
-          : names[0] || "";
-
-        if (selectedModel !== currentModel) {
-          const correctedSettings = {
-            ...settingsRef.current,
-            ollamaModel: selectedModel,
-          };
-          settingsRef.current = correctedSettings;
-          updateSettings(() => correctedSettings, "none");
-          await persistSettings(correctedSettings, { silent: true });
-        }
       } catch (error) {
         if (requestId !== connectionRequestIdRef.current) return;
-        setConnectionStatus({
+        applyConnectionStatus({
           kind: "err",
           text: "Ollama 未连接",
           showAction: true,
-        });
+        }, updateBannerStatus);
         setModels([]);
         if (!preserveTestMessage) {
           setTestConnectionResult({

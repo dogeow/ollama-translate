@@ -456,6 +456,15 @@ body {
   text-align: right;
 }
 
+.field-validation {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.field-validation--error {
+  color: var(--error-text);
+}
+
 /* ===== Select ===== */
 .select {
   width: 100%;
@@ -942,6 +951,211 @@ body {
   color: var(--text-muted);
   margin-bottom: 16px;
   line-height: 1.6;
+}
+
+/* ===== AI Request Logs ===== */
+.ai-logs-card {
+  margin-bottom: 20px;
+}
+
+.ai-logs-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+.ai-logs-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.ai-logs-toolbar .btn {
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+.ai-logs-summary {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.ai-logs-empty,
+.ai-logs-status,
+.ai-logs-error {
+  padding: 10px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+.ai-logs-empty {
+  color: var(--text-muted);
+}
+
+.ai-logs-status {
+  color: var(--success);
+}
+
+.ai-logs-error {
+  color: var(--error-text);
+  border-color: var(--error-border);
+  background: var(--error-bg);
+}
+
+.ai-logs-list {
+  max-height: 60vh;
+  overflow-y: auto;
+  display: grid;
+  gap: 10px;
+  padding-right: 4px;
+}
+
+.ai-log-item {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  overflow: hidden;
+}
+
+.ai-log-item--error {
+  border-color: var(--error-border);
+}
+
+.ai-log-item[open] {
+  background: var(--bg-elevated);
+}
+
+.ai-log-item__summary {
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.ai-log-item__summary::-webkit-details-marker {
+  display: none;
+}
+
+.ai-log-item__summary-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ai-log-item__phase {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.ai-log-item--success .ai-log-item__phase {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.ai-log-item--error .ai-log-item__phase {
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+
+.ai-log-item__provider {
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.ai-log-item__duration {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.ai-log-item__summary-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.ai-log-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 0 12px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.ai-log-item__section {
+  padding: 0 12px 10px;
+}
+
+.ai-log-item__label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.ai-log-item__block {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.ai-log-item__block--error {
+  color: var(--error-text);
+  border-color: var(--error-border);
+  background: var(--error-bg);
+}
+
+.ai-log-item__thinking-details {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+}
+
+.ai-log-item__thinking-summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.ai-log-item__thinking-summary::-webkit-details-marker {
+  display: none;
+}
+
+.ai-log-item__thinking-details[open] .ai-log-item__thinking-summary {
+  border-bottom: 1px solid var(--border-default);
+}
+
+.ai-log-item__thinking-details .ai-log-item__block {
+  border: none;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  max-height: 180px;
 }
 
 /* ===== Update / About card ===== */

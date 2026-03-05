@@ -232,6 +232,17 @@ body {
   background: var(--bg-surface);
 }
 
+.popup-page-translate-btn {
+  margin-top: 2px;
+}
+
+.popup-page-translate-status {
+  margin-top: 9px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
 .popup-panel__header {
   display: flex;
   align-items: flex-start;

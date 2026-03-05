@@ -616,6 +616,21 @@ export function injectStyles() {
     letter-spacing: 0.01em;
 }
 
+/* ===== Visual page translate pending mark ===== */
+.ollama-page-translate-pending {
+    text-decoration-line: underline !important;
+    text-decoration-style: wavy !important;
+    text-decoration-color: rgba(245, 158, 11, 0.92) !important;
+    text-decoration-thickness: 1.5px !important;
+    text-underline-offset: 2px !important;
+}
+
+@media (prefers-color-scheme: light) {
+    .ollama-page-translate-pending {
+        text-decoration-color: rgba(217, 119, 6, 0.9);
+    }
+}
+
 /* ===== Skeleton loading animation ===== */
 @keyframes ollama-tip-loading {
     0%   { background-position: 200% 0; }

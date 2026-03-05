@@ -6,6 +6,50 @@ import {
 import { isOllama403Error } from "../../shared/ollama-errors.js";
 import { getConfig, runGenerateRequest } from "../lib/utils.js";
 
+const THINK_BLOCK_RE = /<think\b[^>]*>([\s\S]*?)<\/think>/gi;
+const THINK_OPEN_TAG_RE = /<think\b[^>]*>/i;
+const THINK_TAG_RE = /<\/?think\b[^>]*>/gi;
+
+function stripThinkingText(text) {
+  const raw = String(text || "");
+  if (!raw) return "";
+
+  let stripped = raw.replace(THINK_BLOCK_RE, "\n");
+  const danglingMatch = THINK_OPEN_TAG_RE.exec(stripped);
+  if (danglingMatch) {
+    stripped = stripped.slice(0, danglingMatch.index);
+  }
+
+  return stripped
+    .replace(THINK_TAG_RE, " ")
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function normalizeDetectedLanguage(text) {
+  const cleaned = stripThinkingText(text);
+  if (!cleaned) return "";
+
+  const lines = cleaned
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const candidate = lines.length > 0 ? lines[lines.length - 1] : cleaned;
+
+  return candidate
+    .replace(/^(language|detected language|识别为|语言)\s*[:：]\s*/i, "")
+    .replace(/[.。]+$/g, "")
+    .trim();
+}
+
+function normalizeTranslationText(text) {
+  const cleaned = stripThinkingText(text);
+  if (cleaned) return cleaned;
+  return String(text || "").trim();
+}
+
 /**
  * 管理翻译测试面板状态的 hook
  */
@@ -56,7 +100,7 @@ export function useTranslateTest({
         : "请先选择模型";
     }
     if (config.provider === PROVIDER_MINIMAX && !config.apiKey) {
-      return "请先填写 MiniMax API Key";
+      return `请先填写${config.apiKeyLabel || "MiniMax API Key"}`;
     }
     return "";
   }
@@ -89,9 +133,11 @@ export function useTranslateTest({
       const prompt =
         "Identify the language of the following text. Reply with only one word: the language name in English (e.g. Chinese, English, Japanese, French, German, Spanish, Korean). No other text.\n\n" +
         text;
-      const language = await runGenerateRequest(config, prompt);
+      const language = normalizeDetectedLanguage(
+        await runGenerateRequest(config, prompt),
+      );
       setDetectLangResult({
-        text: language ? `识别为：${language.replace(/\.$/, "")}` : "未能识别",
+        text: language ? `识别为：${language}` : "未能识别",
         isError: false,
       });
     } catch (error) {
@@ -133,7 +179,9 @@ export function useTranslateTest({
         testSourceLang === "auto"
           ? `Translate the following text to ${testTargetLang}. Detect the source language automatically. Only output the translation, no explanation or extra text.\n\n${text}`
           : `Translate the following text from ${testSourceLang} to ${testTargetLang}. Only output the translation, no explanation or extra text.\n\n${text}`;
-      const translation = await runGenerateRequest(config, prompt);
+      const translation = normalizeTranslationText(
+        await runGenerateRequest(config, prompt),
+      );
       setTestTranslateResult({
         text: translation || "（模型未返回内容）",
         tone: "normal",

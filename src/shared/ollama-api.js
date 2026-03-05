@@ -4,6 +4,11 @@
  */
 
 import { getOllamaErrorMessage } from "./ollama-errors.js";
+import {
+  createAiRequestLog,
+  logAiRequestError,
+  logAiRequestSuccess,
+} from "./ai-request-log.js";
 
 /**
  * 调用 Ollama generate API（非流式）
@@ -13,26 +18,63 @@ import { getOllamaErrorMessage } from "./ollama-errors.js";
  * @returns {Promise<string>} 生成的文本
  */
 export async function generateCompletion(base, model, prompt) {
-  const response = await fetch(`${base}/api/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model, prompt, stream: false }),
+  const endpoint = `${base}/api/generate`;
+  const requestBody = { model, prompt, stream: false };
+  const trace = createAiRequestLog({
+    provider: "ollama",
+    endpoint,
+    model,
+    stream: false,
+    requestContent: prompt,
+    requestPayload: requestBody,
   });
 
-  if (!response.ok) {
-    const text = await response.text();
-    throwGenerateError(response, text);
-  }
+  let status = null;
+  let hasLogged = false;
 
-  const data = await response.json();
-  return (data.response || "").trim();
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+    status = response.status;
+
+    if (!response.ok) {
+      const text = await response.text();
+      const error = createGenerateError(response, text);
+      logAiRequestError(trace, error, {
+        status,
+        extra: { errorBody: text || null },
+      });
+      hasLogged = true;
+      throw error;
+    }
+
+    const data = await response.json();
+    const output = (data.response || "").trim();
+    logAiRequestSuccess(trace, {
+      status,
+      responseContent: output,
+      extra: {
+        thinkingLength: String(data.thinking || "").trim().length,
+      },
+    });
+    hasLogged = true;
+    return output;
+  } catch (error) {
+    if (!hasLogged) {
+      logAiRequestError(trace, error, { status });
+    }
+    throw error;
+  }
 }
 
-function throwGenerateError(response, text) {
+function createGenerateError(response, text) {
   if (response.status === 403) {
-    throw new Error(getOllamaErrorMessage("403"));
+    return new Error(getOllamaErrorMessage("403"));
   }
-  throw new Error(text || `HTTP ${response.status}`);
+  return new Error(text || `HTTP ${response.status}`);
 }
 
 function parseStreamLine(line) {
@@ -61,104 +103,162 @@ export async function generateStreamingCompletion(
   options = {},
 ) {
   const { onChunk } = options;
-  const response = await fetch(`${base}/api/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model, prompt, stream: true }),
+  const endpoint = `${base}/api/generate`;
+  const requestBody = { model, prompt, stream: true };
+  const trace = createAiRequestLog({
+    provider: "ollama",
+    endpoint,
+    model,
+    stream: true,
+    requestContent: prompt,
+    requestPayload: requestBody,
   });
+  let status = null;
+  let hasLogged = false;
+  let chunkCount = 0;
 
-  if (!response.ok) {
-    const text = await response.text();
-    throwGenerateError(response, text);
-  }
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+    status = response.status;
 
-  if (!response.body) {
-    const data = await response.json();
-    if (typeof data.error === "string" && data.error.trim()) {
-      throw new Error(data.error.trim());
-    }
-    const chunk = {
-      response: data.response || "",
-      thinking: data.thinking || "",
-    };
-    onChunk?.(chunk);
-    return {
-      response: chunk.response.trim(),
-      thinking: chunk.thinking.trim(),
-    };
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let accumulatedResponse = "";
-  let accumulatedThinking = "";
-  let streamError = "";
-
-  function handleChunkLine(line) {
-    const payload = parseStreamLine(line);
-    if (!payload) return;
-
-    const payloadError =
-      typeof payload.error === "string" ? payload.error.trim() : "";
-    if (payloadError) {
-      streamError = payloadError;
-      return;
-    }
-
-    let hasDelta = false;
-
-    if (typeof payload.response === "string" && payload.response) {
-      accumulatedResponse += payload.response;
-      hasDelta = true;
-    }
-
-    if (typeof payload.thinking === "string" && payload.thinking) {
-      accumulatedThinking += payload.thinking;
-      hasDelta = true;
-    }
-
-    if (hasDelta) {
-      onChunk?.({
-        response: accumulatedResponse,
-        thinking: accumulatedThinking,
+    if (!response.ok) {
+      const text = await response.text();
+      const error = createGenerateError(response, text);
+      logAiRequestError(trace, error, {
+        status,
+        extra: {
+          errorBody: text || null,
+          chunkCount,
+        },
       });
+      hasLogged = true;
+      throw error;
     }
-  }
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+    if (!response.body) {
+      const data = await response.json();
+      if (typeof data.error === "string" && data.error.trim()) {
+        throw new Error(data.error.trim());
+      }
+      const chunk = {
+        response: data.response || "",
+        thinking: data.thinking || "",
+      };
+      onChunk?.(chunk);
+      const finalResponse = chunk.response.trim();
+      const finalThinking = chunk.thinking.trim();
+      logAiRequestSuccess(trace, {
+        status,
+        responseContent: finalResponse,
+        extra: {
+          thinkingContent: finalThinking || null,
+          chunkCount: 1,
+        },
+      });
+      hasLogged = true;
+      return {
+        response: finalResponse,
+        thinking: finalThinking,
+      };
+    }
 
-    buffer += decoder.decode(value, { stream: true });
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let accumulatedResponse = "";
+    let accumulatedThinking = "";
+    let streamError = "";
 
-    while (buffer.includes("\n")) {
-      const newlineIndex = buffer.indexOf("\n");
-      const line = buffer.slice(0, newlineIndex);
-      buffer = buffer.slice(newlineIndex + 1);
-      handleChunkLine(line);
+    function handleChunkLine(line) {
+      const payload = parseStreamLine(line);
+      if (!payload) return;
+
+      const payloadError =
+        typeof payload.error === "string" ? payload.error.trim() : "";
+      if (payloadError) {
+        streamError = payloadError;
+        return;
+      }
+
+      let hasDelta = false;
+
+      if (typeof payload.response === "string" && payload.response) {
+        accumulatedResponse += payload.response;
+        hasDelta = true;
+      }
+
+      if (typeof payload.thinking === "string" && payload.thinking) {
+        accumulatedThinking += payload.thinking;
+        hasDelta = true;
+      }
+
+      if (hasDelta) {
+        chunkCount += 1;
+        onChunk?.({
+          response: accumulatedResponse,
+          thinking: accumulatedThinking,
+        });
+      }
+    }
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      while (buffer.includes("\n")) {
+        const newlineIndex = buffer.indexOf("\n");
+        const line = buffer.slice(0, newlineIndex);
+        buffer = buffer.slice(newlineIndex + 1);
+        handleChunkLine(line);
+        if (streamError) break;
+      }
+
       if (streamError) break;
     }
 
-    if (streamError) break;
-  }
-
-  if (!streamError) {
-    buffer += decoder.decode();
-    if (buffer.trim()) {
-      handleChunkLine(buffer);
+    if (!streamError) {
+      buffer += decoder.decode();
+      if (buffer.trim()) {
+        handleChunkLine(buffer);
+      }
     }
-  }
 
-  if (streamError) {
-    await reader.cancel(streamError).catch(() => {});
-    throw new Error(streamError);
-  }
+    if (streamError) {
+      await reader.cancel(streamError).catch(() => {});
+      throw new Error(streamError);
+    }
 
-  return {
-    response: accumulatedResponse.trim(),
-    thinking: accumulatedThinking.trim(),
-  };
+    const finalResponse = accumulatedResponse.trim();
+    const finalThinking = accumulatedThinking.trim();
+    logAiRequestSuccess(trace, {
+      status,
+      responseContent: finalResponse,
+      extra: {
+        thinkingContent: finalThinking || null,
+        chunkCount,
+      },
+    });
+    hasLogged = true;
+
+    return {
+      response: finalResponse,
+      thinking: finalThinking,
+    };
+  } catch (error) {
+    if (!hasLogged) {
+      logAiRequestError(trace, error, {
+        status,
+        extra: { chunkCount },
+      });
+    }
+    throw error;
+  }
 }
 
 /**

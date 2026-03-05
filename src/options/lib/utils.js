@@ -4,10 +4,15 @@ import {
   DEFAULT_TRANSLATE_PROVIDER,
   DEFAULT_OLLAMA_MODEL,
   DEFAULT_OLLAMA_URL,
-  DEFAULT_MINIMAX_API_URL,
-  DEFAULT_MINIMAX_API_KEY,
+  DEFAULT_MINIMAX_API_KEY_CN,
+  DEFAULT_MINIMAX_API_KEY_GLOBAL,
+  DEFAULT_MINIMAX_REGION,
+  MINIMAX_REGION_CN,
+  MINIMAX_REGION_GLOBAL,
   DEFAULT_MINIMAX_MODEL,
   DEFAULT_TRANSLATE_TARGET_LANG,
+  DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
+  DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
   ORIGINS_PLATFORM_CONTENT,
 } from "./constants.js";
 
@@ -16,9 +21,16 @@ import { formatModelSize } from "../../shared/model-utils.js";
 import {
   normalizeTranslateProvider,
   normalizeMiniMaxApiUrl,
+  normalizeMiniMaxRegion,
+  getDefaultMiniMaxApiUrlByRegion,
+  isMiniMaxGlobalApiUrl,
+  resolveMiniMaxApiKey,
+  getMiniMaxApiKeyLabel,
   normalizeAutoTranslateMode,
   normalizeHoverTranslateScope,
   normalizeHoverTranslateDelayMs,
+  normalizePageTranslateConcurrency,
+  normalizePageTranslateBatchSize,
 } from "../../shared/settings.js";
 import { generateCompletion } from "../../shared/ollama-api.js";
 import { generateMiniMaxCompletion } from "../../shared/minimax-api.js";
@@ -29,6 +41,8 @@ export {
   normalizeAutoTranslateMode,
   normalizeHoverTranslateScope,
   normalizeHoverTranslateDelayMs,
+  normalizePageTranslateConcurrency,
+  normalizePageTranslateBatchSize,
 };
 
 export function getSettingsSnapshot(settings) {
@@ -40,15 +54,43 @@ export function getSettingsSnapshot(settings) {
   const provider = normalizeTranslateProvider(
     settings.ollamaProvider || DEFAULT_TRANSLATE_PROVIDER,
   );
+  const minimaxRegion = normalizeMiniMaxRegion(
+    settings.minimaxRegion ||
+      (isMiniMaxGlobalApiUrl(settings.minimaxApiUrl)
+        ? MINIMAX_REGION_GLOBAL
+        : DEFAULT_MINIMAX_REGION),
+  );
+  const minimaxApiUrlRaw = String(settings.minimaxApiUrl || "").trim();
+  const minimaxApiUrl = minimaxApiUrlRaw
+    ? normalizeMiniMaxApiUrl(minimaxApiUrlRaw)
+    : getDefaultMiniMaxApiUrlByRegion(minimaxRegion);
+  const minimaxApiKeyCn = String(
+    settings.minimaxApiKeyCn ??
+      settings.minimaxApiKey ??
+      DEFAULT_MINIMAX_API_KEY_CN,
+  ).trim();
+  const minimaxApiKeyGlobal = String(
+    settings.minimaxApiKeyGlobal ??
+      settings.minimaxApiKey ??
+      DEFAULT_MINIMAX_API_KEY_GLOBAL,
+  ).trim();
+  const minimaxApiKey = resolveMiniMaxApiKey({
+    minimaxRegion,
+    minimaxApiUrl,
+    minimaxApiKeyCn,
+    minimaxApiKeyGlobal,
+    minimaxApiKey: settings.minimaxApiKey,
+  });
 
   return {
     ollamaProvider: provider,
     ollamaUrl: base,
     ollamaModel: String(settings.ollamaModel || "").trim() || DEFAULT_OLLAMA_MODEL,
-    minimaxApiUrl: normalizeMiniMaxApiUrl(settings.minimaxApiUrl),
-    minimaxApiKey: String(
-      settings.minimaxApiKey ?? DEFAULT_MINIMAX_API_KEY,
-    ).trim(),
+    minimaxApiUrl,
+    minimaxRegion,
+    minimaxApiKey,
+    minimaxApiKeyCn,
+    minimaxApiKeyGlobal,
     minimaxModel:
       String(settings.minimaxModel || "").trim() || DEFAULT_MINIMAX_MODEL,
     ollamaTranslateTargetLang:
@@ -65,6 +107,12 @@ export function getSettingsSnapshot(settings) {
     ollamaHoverTranslateDelayMs: normalizeHoverTranslateDelayMs(
       settings.ollamaHoverTranslateDelayMs,
     ),
+    ollamaPageTranslateConcurrency: normalizePageTranslateConcurrency(
+      settings.ollamaPageTranslateConcurrency,
+    ),
+    ollamaPageTranslateBatchSize: normalizePageTranslateBatchSize(
+      settings.ollamaPageTranslateBatchSize,
+    ),
     ollamaLearningModeEnabled: !!settings.ollamaLearningModeEnabled,
   };
 }
@@ -72,11 +120,13 @@ export function getSettingsSnapshot(settings) {
 export function getConfig(settings) {
   const snapshot = getSettingsSnapshot(settings);
   if (snapshot.ollamaProvider === PROVIDER_MINIMAX) {
+    const apiKey = resolveMiniMaxApiKey(snapshot);
     return {
       provider: PROVIDER_MINIMAX,
       base: snapshot.minimaxApiUrl,
       model: snapshot.minimaxModel,
-      apiKey: snapshot.minimaxApiKey,
+      apiKey,
+      apiKeyLabel: getMiniMaxApiKeyLabel(snapshot),
     };
   }
 
@@ -85,22 +135,50 @@ export function getConfig(settings) {
     base: snapshot.ollamaUrl,
     model: snapshot.ollamaModel,
     apiKey: "",
+    apiKeyLabel: "",
   };
 }
 
 export function getStoredSettingsShape(stored) {
+  const minimaxRegion = normalizeMiniMaxRegion(
+    stored.minimaxRegion ||
+      (isMiniMaxGlobalApiUrl(stored.minimaxApiUrl)
+        ? MINIMAX_REGION_GLOBAL
+        : DEFAULT_MINIMAX_REGION),
+  );
+  const minimaxApiUrlRaw = String(stored.minimaxApiUrl || "").trim();
+  const minimaxApiUrl = minimaxApiUrlRaw
+    ? normalizeMiniMaxApiUrl(minimaxApiUrlRaw)
+    : getDefaultMiniMaxApiUrlByRegion(minimaxRegion);
+  const minimaxApiKeyCn = String(
+    stored.minimaxApiKeyCn ??
+      stored.minimaxApiKey ??
+      DEFAULT_MINIMAX_API_KEY_CN,
+  ).trim();
+  const minimaxApiKeyGlobal = String(
+    stored.minimaxApiKeyGlobal ??
+      stored.minimaxApiKey ??
+      DEFAULT_MINIMAX_API_KEY_GLOBAL,
+  ).trim();
+  const minimaxApiKey = resolveMiniMaxApiKey({
+    minimaxRegion,
+    minimaxApiUrl,
+    minimaxApiKeyCn,
+    minimaxApiKeyGlobal,
+    minimaxApiKey: stored.minimaxApiKey,
+  });
+
   return {
     ollamaProvider: normalizeTranslateProvider(
       stored.ollamaProvider || DEFAULT_TRANSLATE_PROVIDER,
     ),
     ollamaUrl: stored.ollamaUrl || DEFAULT_OLLAMA_URL,
     ollamaModel: stored.ollamaModel || DEFAULT_OLLAMA_MODEL,
-    minimaxApiUrl: normalizeMiniMaxApiUrl(
-      stored.minimaxApiUrl || DEFAULT_MINIMAX_API_URL,
-    ),
-    minimaxApiKey: String(
-      stored.minimaxApiKey ?? DEFAULT_MINIMAX_API_KEY,
-    ).trim(),
+    minimaxApiUrl,
+    minimaxRegion,
+    minimaxApiKey,
+    minimaxApiKeyCn,
+    minimaxApiKeyGlobal,
     minimaxModel: stored.minimaxModel || DEFAULT_MINIMAX_MODEL,
     ollamaTranslateTargetLang:
       stored.ollamaTranslateTargetLang || DEFAULT_TRANSLATE_TARGET_LANG,
@@ -113,6 +191,17 @@ export function getStoredSettingsShape(stored) {
     ),
     ollamaHoverTranslateDelayMs: String(
       normalizeHoverTranslateDelayMs(stored.ollamaHoverTranslateDelayMs),
+    ),
+    ollamaPageTranslateConcurrency: String(
+      normalizePageTranslateConcurrency(
+        stored.ollamaPageTranslateConcurrency ??
+          DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
+      ),
+    ),
+    ollamaPageTranslateBatchSize: String(
+      normalizePageTranslateBatchSize(
+        stored.ollamaPageTranslateBatchSize ?? DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
+      ),
     ),
     ollamaLearningModeEnabled: !!stored.ollamaLearningModeEnabled,
   };

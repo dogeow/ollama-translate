@@ -1,5 +1,6 @@
 import {
   checkOllamaAndGetModels,
+  generateOllamaResponse,
   generateOllamaStreamingResponse,
 } from "./background/ollama.js";
 import {
@@ -17,7 +18,10 @@ import {
 } from "./shared/update.js";
 import {
   normalizeAutoTranslateMode,
+  getMiniMaxApiKeyLabel,
   normalizeHoverTranslateScope,
+  normalizePageTranslateBatchSize,
+  resolveMiniMaxApiKey,
   normalizeTranslateProvider,
 } from "./shared/settings.js";
 import {
@@ -28,20 +32,28 @@ import {
   DEFAULT_OLLAMA_MODEL,
   DEFAULT_MINIMAX_API_URL,
   DEFAULT_MINIMAX_API_KEY,
+  DEFAULT_MINIMAX_API_KEY_CN,
+  DEFAULT_MINIMAX_API_KEY_GLOBAL,
+  DEFAULT_MINIMAX_REGION,
   DEFAULT_MINIMAX_MODEL,
   DEFAULT_TRANSLATE_TARGET_LANG,
+  DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
+  DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
   DEFAULT_LEARNING_MODE_ENABLED,
   DEFAULT_APP_ENABLED,
   TRANSLATE_RESULT_KEY,
 } from "./shared/constants.js";
 import { getOllamaErrorMessage } from "./shared/ollama-errors.js";
 import {
+  generateMiniMaxCompletion,
   generateMiniMaxStreamingCompletion,
   normalizeMiniMaxBaseUrl,
 } from "./shared/minimax-api.js";
 
 const LOG_PREFIX = "[Ollama 翻译]";
 const MENU_TRANSLATE_SELECTION = "ollama-translate";
+const MENU_TRANSLATE_PAGE = "ollama-translate-page";
+const MENU_OPEN_OPTIONS = "ollama-open-options";
 const MENU_AUTO_MODE_PARENT = "ollama-auto-translate-mode";
 const MENU_AUTO_MODE_OFF = "ollama-auto-translate-mode-off";
 const MENU_AUTO_MODE_SELECTION = "ollama-auto-translate-mode-selection";
@@ -51,6 +63,8 @@ const MENU_HOVER_SCOPE_WORD = "ollama-hover-translate-scope-word";
 const MENU_HOVER_SCOPE_PARAGRAPH = "ollama-hover-translate-scope-paragraph";
 const THINK_BLOCK_RE = /<think\b[^>]*>([\s\S]*?)<\/think>/gi;
 const THINK_OPEN_TAG_RE = /<think\b[^>]*>/i;
+const THINK_ANY_TAG_RE = /<\/?think\b[^>]*>/i;
+const RATE_LIMIT_ERROR_RE = /(?:\b429\b|rate[ -]?limit|too many requests|usage limit|quota)/i;
 const MIN_THINK_PREVIEW_MS = 320;
 
 function normalizeDisplayText(text) {
@@ -97,6 +111,141 @@ function mergeThinking(...segments) {
   });
 
   return uniqueSegments.join("\n\n");
+}
+
+function buildTranslatePrompt(text, targetLang) {
+  return `Translate the following text to ${targetLang}. Only output the translation, no explanation or extra text.\n\n${text}`;
+}
+
+function buildPageBatchTranslatePrompt(texts, targetLang) {
+  return [
+    `Translate each item in the JSON array to ${targetLang}.`,
+    "Rules:",
+    "1. Keep the same order and item count.",
+    "2. Return ONLY a valid JSON array of strings.",
+    "3. Do not include markdown, comments, or extra fields.",
+    "4. Preserve placeholders, numbers, and URLs.",
+    "",
+    "Input JSON:",
+    JSON.stringify(texts),
+  ].join("\n");
+}
+
+function extractDisplayTranslation(rawText) {
+  const raw = String(rawText ?? "");
+  if (!raw.trim()) return "";
+
+  const parsed = splitThinkingFromText(raw);
+  const cleaned = normalizeDisplayText(parsed.translation);
+  if (cleaned) return cleaned;
+
+  if (THINK_ANY_TAG_RE.test(raw)) {
+    // 包含 think 标签但无有效译文时，宁可返回空，避免把思考内容写回页面
+    return "";
+  }
+
+  return normalizeDisplayText(raw);
+}
+
+function normalizeBatchTranslationItem(item) {
+  if (typeof item === "string") {
+    return extractDisplayTranslation(item);
+  }
+  if (item && typeof item === "object") {
+    const text = String(
+      item.translation || item.translated || item.text || "",
+    ).trim();
+    if (!text) return "";
+    return extractDisplayTranslation(text);
+  }
+  return "";
+}
+
+function extractFirstJsonArrayString(rawText) {
+  const source = String(rawText || "");
+  if (!source) return "";
+
+  let inString = false;
+  let escaped = false;
+  let depth = 0;
+  let start = -1;
+
+  for (let i = 0; i < source.length; i += 1) {
+    const char = source[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+
+    if (char === "[") {
+      if (depth === 0) start = i;
+      depth += 1;
+      continue;
+    }
+
+    if (char === "]" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        return source.slice(start, i + 1);
+      }
+    }
+  }
+
+  return "";
+}
+
+function isRateLimitError(errorMessage) {
+  return RATE_LIMIT_ERROR_RE.test(String(errorMessage || ""));
+}
+
+function parsePageBatchTranslations(rawText, expectedCount) {
+  const raw = String(rawText || "").trim();
+  if (!raw || expectedCount <= 0) return [];
+
+  const strippedFence = raw
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  const jsonCandidates = [
+    raw,
+    strippedFence,
+    extractFirstJsonArrayString(raw),
+    extractFirstJsonArrayString(strippedFence),
+  ].filter(Boolean);
+
+  for (const candidate of jsonCandidates) {
+    if (!candidate) continue;
+    try {
+      const payload = JSON.parse(candidate);
+      const list = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.translations)
+          ? payload.translations
+          : [];
+      if (!Array.isArray(list) || list.length === 0) continue;
+
+      const normalized = list
+        .slice(0, expectedCount)
+        .map(normalizeBatchTranslationItem);
+      if (normalized.length === expectedCount && normalized.every(Boolean)) {
+        return normalized;
+      }
+    } catch (_) {}
+  }
+
+  return [];
 }
 
 async function sendTranslatePending(tabId, payload) {
@@ -184,6 +333,18 @@ async function createContextMenus() {
     id: MENU_TRANSLATE_SELECTION,
     title: "Ollama 翻译选中内容",
     contexts: ["selection"],
+  });
+
+  chrome.contextMenus.create({
+    id: MENU_TRANSLATE_PAGE,
+    title: "Ollama 翻译整个网页（可视区域优先）",
+    contexts: ["page"],
+  });
+
+  chrome.contextMenus.create({
+    id: MENU_OPEN_OPTIONS,
+    title: "打开设置",
+    contexts: ["action"],
   });
 
   chrome.contextMenus.create({
@@ -279,7 +440,7 @@ async function updateActionBadge(updateState) {
     await chrome.action
       .setTitle({
         title:
-          `Ollama 翻译设置\n发现新版本 ${updateState.latestVersion || ""}`.trim(),
+          `Ollama 翻译快捷面板\n发现新版本 ${updateState.latestVersion || ""}`.trim(),
       })
       .catch(() => {});
     return;
@@ -288,7 +449,7 @@ async function updateActionBadge(updateState) {
   await chrome.action.setBadgeText({ text: "" }).catch(() => {});
   await chrome.action
     .setTitle({
-      title: "Ollama 翻译设置",
+      title: "Ollama 翻译快捷面板",
     })
     .catch(() => {});
 }
@@ -412,13 +573,135 @@ function buildErrorResult({
   };
 }
 
+async function runProviderCompletion({
+  provider,
+  base,
+  model,
+  apiKey,
+  prompt,
+}) {
+  if (provider === PROVIDER_MINIMAX) {
+    return generateMiniMaxCompletion(base, apiKey, model, prompt);
+  }
+  return generateOllamaResponse(base, model, prompt);
+}
+
+function toProviderError(provider, error) {
+  if (provider === PROVIDER_MINIMAX) {
+    return error?.message || String(error);
+  }
+  return getOllamaErrorMessage(error, { detailed: true });
+}
+
+async function translatePageBatchWithProvider(texts) {
+  const settings = await chrome.storage.sync.get({
+    ollamaProvider: DEFAULT_TRANSLATE_PROVIDER,
+    ollamaUrl: DEFAULT_OLLAMA_URL,
+    ollamaModel: DEFAULT_OLLAMA_MODEL,
+    minimaxApiUrl: DEFAULT_MINIMAX_API_URL,
+    minimaxRegion: DEFAULT_MINIMAX_REGION,
+    minimaxApiKey: DEFAULT_MINIMAX_API_KEY,
+    minimaxApiKeyCn: DEFAULT_MINIMAX_API_KEY_CN,
+    minimaxApiKeyGlobal: DEFAULT_MINIMAX_API_KEY_GLOBAL,
+    minimaxModel: DEFAULT_MINIMAX_MODEL,
+    ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
+    ollamaAppEnabled: DEFAULT_APP_ENABLED,
+    ollamaPageTranslateBatchSize: DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
+    ollamaPageTranslateConcurrency: DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
+  });
+
+  const maxBatchSize = normalizePageTranslateBatchSize(
+    settings.ollamaPageTranslateBatchSize,
+  );
+  const normalizedTexts = Array.isArray(texts)
+    ? texts
+        .map((text) => String(text || "").trim())
+        .filter(Boolean)
+        .slice(0, maxBatchSize)
+    : [];
+  if (normalizedTexts.length === 0) {
+    return { ok: false, error: "empty_texts" };
+  }
+
+  if (!settings.ollamaAppEnabled) {
+    return { ok: false, disabled: true };
+  }
+
+  const provider = normalizeTranslateProvider(settings.ollamaProvider);
+  const targetLang =
+    settings.ollamaTranslateTargetLang || DEFAULT_TRANSLATE_TARGET_LANG;
+  const selectedModel =
+    provider === PROVIDER_MINIMAX
+      ? settings.minimaxModel || DEFAULT_MINIMAX_MODEL
+      : settings.ollamaModel;
+  const base =
+    provider === PROVIDER_MINIMAX
+      ? normalizeMiniMaxBaseUrl(settings.minimaxApiUrl)
+      : String(settings.ollamaUrl || DEFAULT_OLLAMA_URL).replace(/\/$/, "");
+  const minimaxApiKey = resolveMiniMaxApiKey(settings);
+  const apiKey = provider === PROVIDER_MINIMAX ? minimaxApiKey : "";
+
+  if (provider === PROVIDER_OLLAMA && !selectedModel) {
+    const check = await checkOllamaAndGetModels(settings.ollamaUrl);
+    return {
+      ok: false,
+      needModel: true,
+      models: check.models || [],
+      error: check.error
+        ? check.error === "403"
+          ? "403"
+          : "connection"
+        : "no_model",
+    };
+  }
+
+  if (provider === PROVIDER_MINIMAX && !apiKey) {
+    return {
+      ok: false,
+      needModel: false,
+      error: `请先填写${getMiniMaxApiKeyLabel(settings)}。`,
+    };
+  }
+
+  const batchPrompt = buildPageBatchTranslatePrompt(normalizedTexts, targetLang);
+  let translations = [];
+  let errorMessage = "";
+
+  try {
+    const batchRaw = await runProviderCompletion({
+      provider,
+      base,
+      model: selectedModel,
+      apiKey,
+      prompt: batchPrompt,
+    });
+    translations = parsePageBatchTranslations(batchRaw, normalizedTexts.length);
+  } catch (error) {
+    errorMessage = toProviderError(provider, error);
+  }
+
+  if (translations.length !== normalizedTexts.length || !translations.every(Boolean)) {
+    return {
+      ok: false,
+      needModel: false,
+      rateLimited: isRateLimitError(errorMessage),
+      error: errorMessage || "批量翻译结果解析失败。",
+    };
+  }
+
+  return { ok: true, translations };
+}
+
 async function translateWithProvider(text, tabId = null, options = {}) {
   const settings = await chrome.storage.sync.get({
     ollamaProvider: DEFAULT_TRANSLATE_PROVIDER,
     ollamaUrl: DEFAULT_OLLAMA_URL,
     ollamaModel: DEFAULT_OLLAMA_MODEL,
     minimaxApiUrl: DEFAULT_MINIMAX_API_URL,
+    minimaxRegion: DEFAULT_MINIMAX_REGION,
     minimaxApiKey: DEFAULT_MINIMAX_API_KEY,
+    minimaxApiKeyCn: DEFAULT_MINIMAX_API_KEY_CN,
+    minimaxApiKeyGlobal: DEFAULT_MINIMAX_API_KEY_GLOBAL,
     minimaxModel: DEFAULT_MINIMAX_MODEL,
     ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
     ollamaLearningModeEnabled: DEFAULT_LEARNING_MODE_ENABLED,
@@ -429,6 +712,8 @@ async function translateWithProvider(text, tabId = null, options = {}) {
     showPending = false,
     requestId = undefined,
     triggerSource = undefined,
+    persistResult = true,
+    learningModeOverride = null,
   } = options;
   const resolvedRequestId = createTranslateRequestId(requestId);
   const provider = normalizeTranslateProvider(settings.ollamaProvider);
@@ -439,7 +724,10 @@ async function translateWithProvider(text, tabId = null, options = {}) {
   const targetLang =
     settings.ollamaTranslateTargetLang || DEFAULT_TRANSLATE_TARGET_LANG;
   const learningModeEnabled =
-    !!settings.ollamaLearningModeEnabled;
+    typeof learningModeOverride === "boolean"
+      ? learningModeOverride
+      : !!settings.ollamaLearningModeEnabled;
+  const minimaxApiKey = resolveMiniMaxApiKey(settings);
 
   if (!settings.ollamaAppEnabled) {
     console.log(
@@ -480,22 +768,26 @@ async function translateWithProvider(text, tabId = null, options = {}) {
       requestId: resolvedRequestId,
       triggerSource,
     });
-    await persistTranslateResult(errorResult);
+    if (persistResult) {
+      await persistTranslateResult(errorResult);
+    }
     return errorResult;
   }
 
-  if (provider === PROVIDER_MINIMAX && !String(settings.minimaxApiKey).trim()) {
+  if (provider === PROVIDER_MINIMAX && !minimaxApiKey) {
     const errorResult = buildErrorResult({
       original: text,
       targetLang,
-      error: "请先填写 MiniMax API Key。",
+      error: `请先填写${getMiniMaxApiKeyLabel(settings)}。`,
       model: selectedModel || null,
       needModel: false,
       learningModeEnabled,
       requestId: resolvedRequestId,
       triggerSource,
     });
-    await persistTranslateResult(errorResult);
+    if (persistResult) {
+      await persistTranslateResult(errorResult);
+    }
     return errorResult;
   }
 
@@ -503,7 +795,7 @@ async function translateWithProvider(text, tabId = null, options = {}) {
     provider === PROVIDER_MINIMAX
       ? normalizeMiniMaxBaseUrl(settings.minimaxApiUrl)
       : settings.ollamaUrl.replace(/\/$/, "");
-  const prompt = `Translate the following text to ${targetLang}. Only output the translation, no explanation or extra text.\n\n${text}`;
+  const prompt = buildTranslatePrompt(text, targetLang);
 
   let translation = "";
   let thinking = "";
@@ -516,7 +808,7 @@ async function translateWithProvider(text, tabId = null, options = {}) {
   let stopPendingUpdates = false;
   const MIN_SENTENCE_STUDY_THINK_PREVIEW_MS = 260;
   const sentenceStudyApiKey =
-    provider === PROVIDER_MINIMAX ? String(settings.minimaxApiKey || "").trim() : "";
+    provider === PROVIDER_MINIMAX ? minimaxApiKey : "";
   let sentenceStudyPromise = null;
 
   async function sendPendingProgress(force = false) {
@@ -598,7 +890,7 @@ async function translateWithProvider(text, tabId = null, options = {}) {
     if (provider === PROVIDER_MINIMAX) {
       const streamed = await generateMiniMaxStreamingCompletion(
         base,
-        settings.minimaxApiKey,
+        minimaxApiKey,
         selectedModel,
         prompt,
         {
@@ -681,7 +973,9 @@ async function translateWithProvider(text, tabId = null, options = {}) {
   hasFinalTranslateResult = true;
   latestTranslateResult = result;
 
-  await persistTranslateResult(result);
+  if (persistResult) {
+    await persistTranslateResult(result);
+  }
 
   if (result.sentenceStudyPending && sentenceStudyPromise) {
     void (async () => {
@@ -719,7 +1013,9 @@ async function translateWithProvider(text, tabId = null, options = {}) {
       };
 
       latestTranslateResult = nextResult;
-      await persistTranslateResult(nextResult);
+      if (persistResult) {
+        await persistTranslateResult(nextResult);
+      }
       await sendTranslateResult(tabId, nextResult, "updateSentenceStudy");
     })();
   }
@@ -735,6 +1031,32 @@ function openResultWindow() {
     width: 480,
     height: 360,
   });
+}
+
+async function triggerVisualPageTranslate(tabId) {
+  if (!tabId) return { ok: false, error: "missing_tab" };
+
+  try {
+    const response = await new Promise((resolve) => {
+      chrome.tabs.sendMessage(
+        tabId,
+        { action: "startVisualPageTranslate" },
+        (value) => {
+          if (chrome.runtime.lastError) {
+            resolve({
+              ok: false,
+              error: chrome.runtime.lastError.message,
+            });
+            return;
+          }
+          resolve(value || { ok: true });
+        },
+      );
+    });
+    return response;
+  } catch (error) {
+    return { ok: false, error: error.message || String(error) };
+  }
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -835,7 +1157,7 @@ const AUTO_MODE_MENU_MAP = {
   },
 };
 
-chrome.contextMenus.onClicked.addListener(async (info) => {
+chrome.contextMenus.onClicked.addListener(async (info, clickedTab) => {
   const menuConfig = AUTO_MODE_MENU_MAP[info.menuItemId];
   if (menuConfig) {
     await chrome.storage.sync.set({ [menuConfig.key]: menuConfig.value });
@@ -843,14 +1165,35 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
     return;
   }
 
+  if (info.menuItemId === MENU_OPEN_OPTIONS) {
+    await chrome.runtime.openOptionsPage();
+    return;
+  }
+
+  const clickedTabId = clickedTab?.id;
+  if (info.menuItemId === MENU_TRANSLATE_PAGE) {
+    const response = await triggerVisualPageTranslate(clickedTabId);
+    if (!response?.ok) {
+      console.warn(
+        LOG_PREFIX,
+        "右键菜单触发整页翻译失败:",
+        response?.error || "unknown_error",
+      );
+    }
+    return;
+  }
+
   if (info.menuItemId !== MENU_TRANSLATE_SELECTION || !info.selectionText)
     return;
   const text = info.selectionText.trim();
-  const [tab] = await chrome.tabs.query({
-    active: true,
-    currentWindow: true,
-  });
-  const tabId = tab?.id;
+  let tabId = clickedTabId;
+  if (!tabId) {
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
+    tabId = tab?.id;
+  }
   try {
     const result = await translateWithProvider(text, tabId, {
       showPending: true,
@@ -893,6 +1236,49 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === "checkExtensionUpdate") {
     checkForExtensionUpdate({ markChecking: true })
       .then((state) => sendResponse({ ok: true, state }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (msg.action === "translatePageTextBatch" && Array.isArray(msg.texts)) {
+    translatePageBatchWithProvider(msg.texts)
+      .then((result) => sendResponse(result))
+      .catch((error) =>
+        sendResponse({
+          ok: false,
+          error: error.message || String(error),
+        }),
+      );
+    return true;
+  }
+
+  if (msg.action === "translatePageTextChunk" && msg.text) {
+    const chunkText = String(msg.text).trim();
+    if (!chunkText) {
+      sendResponse({ ok: false, error: "empty_text" });
+      return true;
+    }
+
+    translateWithProvider(chunkText, null, {
+      showPending: false,
+      requestId: msg.requestId,
+      triggerSource: msg.triggerSource || "page-visual",
+      persistResult: false,
+      learningModeOverride: false,
+    })
+      .then((result) => {
+        if (!result) {
+          sendResponse({ ok: false, disabled: true });
+          return;
+        }
+        sendResponse({
+          ok: !result.error && !!result.translation,
+          translation: result.translation || "",
+          error: result.error || null,
+          rateLimited: isRateLimitError(result.error),
+          needModel: !!result.needModel,
+        });
+      })
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }

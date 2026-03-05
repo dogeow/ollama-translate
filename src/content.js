@@ -2,7 +2,12 @@
  * 滑词翻译 content script 入口：选区/悬停显示「翻译」按钮，点击后展示 tips 小窗
  * 逻辑已拆到 content/* 各模块，本文件仅做胶水与消息监听。
  */
-import { BUTTON_ID, STYLE_ID, TIP_ID } from "./content/constants.js";
+import {
+  BUTTON_ID,
+  SHORTCUT_HINT_ID,
+  STYLE_ID,
+  TIP_ID,
+} from "./content/constants.js";
 import {
   getCurrentElementAndText,
   getHoverTranslateTarget,
@@ -18,21 +23,28 @@ import {
 } from "./content/button.js";
 import { showTip, hideTip } from "./content/tip.js";
 import { showShortcutHint } from "./content/shortcutHint.js";
+import { createVisualPageTranslator } from "./content/pageTranslate.js";
 import {
   DEFAULT_TRANSLATE_TARGET_LANG,
   DEFAULT_AUTO_TRANSLATE_MODE,
   DEFAULT_HOVER_TRANSLATE_SCOPE,
   DEFAULT_HOVER_TRANSLATE_DELAY_MS,
+  DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
+  DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
   SELECTION_AUTO_TRANSLATE_DELAY_MS,
 } from "./shared/constants.js";
 import {
   normalizeAutoTranslateMode,
   normalizeHoverTranslateScope,
   normalizeHoverTranslateDelayMs,
+  normalizePageTranslateConcurrency,
+  normalizePageTranslateBatchSize,
 } from "./shared/settings.js";
 
 const CONTENT_STATE_KEY = "__OLLAMA_TRANSLATE_CONTENT_STATE__";
 const LOG_PREFIX = "[Ollama 翻译-Content]";
+const PAGE_TRANSLATE_CHUNK_TIMEOUT_MS = 30000;
+const PAGE_TRANSLATE_BATCH_TIMEOUT_MS = 45000;
 
 function logDebug(...args) {
   console.log(LOG_PREFIX, ...args);
@@ -74,6 +86,9 @@ function initContentScript() {
   let lastCompletedHoverRequestId = "";
   let hoverRequestSeq = 0;
   let activeTipRequestId = "";
+  let pageTranslateConcurrency = DEFAULT_PAGE_TRANSLATE_CONCURRENCY;
+  let pageTranslateBatchSize = DEFAULT_PAGE_TRANSLATE_BATCH_SIZE;
+  let pageTranslator = null;
 
   function isMostlyChineseText(text) {
     const value = String(text || "").trim();
@@ -103,6 +118,10 @@ function initContentScript() {
     return translateTargetLang === "Chinese" && isMostlyChineseText(text);
   }
 
+  function shouldSkipPageTranslate(text) {
+    return translateTargetLang === "Chinese" && isMostlyChineseText(text);
+  }
+
   function applyAutoTranslateSettings(cfg) {
     autoTranslateMode = normalizeAutoTranslateMode(
       cfg.ollamaAutoTranslateMode,
@@ -116,6 +135,18 @@ function initContentScript() {
     hoverTranslateDelayMs = normalizeHoverTranslateDelayMs(
       cfg.ollamaHoverTranslateDelayMs,
     );
+    pageTranslateConcurrency = normalizePageTranslateConcurrency(
+      cfg.ollamaPageTranslateConcurrency,
+    );
+    pageTranslateBatchSize = normalizePageTranslateBatchSize(
+      cfg.ollamaPageTranslateBatchSize,
+    );
+    if (pageTranslator) {
+      pageTranslator.updateOptions({
+        maxConcurrent: pageTranslateConcurrency,
+        batchSize: pageTranslateBatchSize,
+      });
+    }
     if (autoTranslateMode !== "off") hideButton();
     clearSelectionAutoTranslateTimer();
     clearHoverAutoTranslateTimer({ preserveLastResolved: true });
@@ -128,6 +159,8 @@ function initContentScript() {
       ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
       ollamaHoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
       ollamaHoverTranslateDelayMs: DEFAULT_HOVER_TRANSLATE_DELAY_MS,
+      ollamaPageTranslateConcurrency: DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
+      ollamaPageTranslateBatchSize: DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
     },
     applyAutoTranslateSettings,
   );
@@ -139,7 +172,9 @@ function initContentScript() {
       !("ollamaAutoTranslateSelection" in changes) &&
       !("ollamaTranslateTargetLang" in changes) &&
       !("ollamaHoverTranslateScope" in changes) &&
-      !("ollamaHoverTranslateDelayMs" in changes)
+      !("ollamaHoverTranslateDelayMs" in changes) &&
+      !("ollamaPageTranslateConcurrency" in changes) &&
+      !("ollamaPageTranslateBatchSize" in changes)
     ) {
       return;
     }
@@ -150,6 +185,8 @@ function initContentScript() {
         ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
         ollamaHoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
         ollamaHoverTranslateDelayMs: DEFAULT_HOVER_TRANSLATE_DELAY_MS,
+        ollamaPageTranslateConcurrency: DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
+        ollamaPageTranslateBatchSize: DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
       },
       applyAutoTranslateSettings,
     );
@@ -181,9 +218,87 @@ function initContentScript() {
     return !!(
       target &&
       target.closest &&
-      target.closest(`#${BUTTON_ID}, #${TIP_ID}`)
+      target.closest(`#${BUTTON_ID}, #${TIP_ID}, #${SHORTCUT_HINT_ID}`)
     );
   }
+
+  function requestPageChunkTranslate(text) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (payload) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(payload);
+      };
+      const timer = window.setTimeout(() => {
+        finish({ ok: false, error: "timeout" });
+      }, PAGE_TRANSLATE_CHUNK_TIMEOUT_MS);
+
+      sendMessageSafe(
+        {
+          action: "translatePageTextChunk",
+          text,
+          triggerSource: "page-visual",
+        },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            finish({
+              ok: false,
+              error: chrome.runtime.lastError.message,
+            });
+            return;
+          }
+          finish(response || { ok: false, error: "empty_response" });
+        },
+      );
+    });
+  }
+
+  function requestPageBatchTranslate(texts) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (payload) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(payload);
+      };
+      const timer = window.setTimeout(() => {
+        finish({ ok: false, error: "timeout" });
+      }, PAGE_TRANSLATE_BATCH_TIMEOUT_MS);
+
+      sendMessageSafe(
+        {
+          action: "translatePageTextBatch",
+          texts,
+          triggerSource: "page-visual-batch",
+        },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            finish({
+              ok: false,
+              error: chrome.runtime.lastError.message,
+            });
+            return;
+          }
+          finish(response || { ok: false, error: "empty_response" });
+        },
+      );
+    });
+  }
+
+  pageTranslator = createVisualPageTranslator({
+    requestChunkTranslation: requestPageChunkTranslate,
+    requestBatchTranslation: requestPageBatchTranslate,
+    onStatusMessage: (message) => showShortcutHint(message),
+    shouldSkipText: shouldSkipPageTranslate,
+    isUiElement: (element) => isExtensionUiTarget(element),
+    initialOptions: {
+      maxConcurrent: pageTranslateConcurrency,
+      batchSize: pageTranslateBatchSize,
+    },
+  });
 
   function onButtonClick(e) {
     e.preventDefault();
@@ -242,6 +357,10 @@ function initContentScript() {
       showTip(msg, lastTipRect);
     } else if (msg.action === "showShortcutHint" && msg.message) {
       showShortcutHint(msg.message);
+    } else if (msg.action === "startVisualPageTranslate") {
+      pageTranslator.start();
+      sendResponse({ ok: true, active: pageTranslator.isActive() });
+      return true;
     } else if (msg.action === "getTextToTranslate") {
       const { element: currentElement, text: currentText } =
         getCurrentElementAndText(lastMouseX, lastMouseY);
@@ -371,6 +490,11 @@ function initContentScript() {
     if (autoTranslateMode === "hover") {
       clearHoverAutoTranslateTimer({ preserveLastResolved: true });
     }
+    pageTranslator.handleViewportChanged();
+  }
+
+  function onResize() {
+    pageTranslator.handleViewportChanged();
   }
 
   function onMouseMove(e) {
@@ -493,10 +617,12 @@ function initContentScript() {
   document.addEventListener("selectionchange", onSelectionChangedEvent, true);
   document.addEventListener("scroll", onScroll, true);
   document.addEventListener("mousemove", onMouseMove, true);
+  window.addEventListener("resize", onResize);
 
   return function cleanup() {
     clearSelectionAutoTranslateTimer();
     clearHoverAutoTranslateTimer();
+    pageTranslator.stop();
     hideButton();
     hideTip();
     chrome.runtime.onMessage.removeListener(onRuntimeMessage);
@@ -509,6 +635,7 @@ function initContentScript() {
     );
     document.removeEventListener("scroll", onScroll, true);
     document.removeEventListener("mousemove", onMouseMove, true);
+    window.removeEventListener("resize", onResize);
     if (btn._ollamaClickHandler) {
       btn.removeEventListener("click", btn._ollamaClickHandler);
       delete btn._ollamaClickHandler;

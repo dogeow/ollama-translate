@@ -1,0 +1,488 @@
+const IGNORE_TAGS = new Set([
+  "SCRIPT",
+  "STYLE",
+  "NOSCRIPT",
+  "TEXTAREA",
+  "INPUT",
+  "SELECT",
+  "OPTION",
+  "CODE",
+  "PRE",
+  "SVG",
+  "CANVAS",
+]);
+
+const SIGNIFICANT_CHAR_RE = /[\p{L}\p{N}\u3400-\u9fff]/u;
+const PAGE_TRANSLATE_SCAN_DEBOUNCE_MS = 180;
+const PAGE_TRANSLATE_MAX_QUEUE_SIZE = 80;
+const PAGE_TRANSLATE_MAX_SCAN_NODES = 1200;
+const PAGE_TRANSLATE_DEFAULT_CONCURRENT = 1;
+const PAGE_TRANSLATE_DEFAULT_BATCH_SIZE = 8;
+const PAGE_TRANSLATE_MAX_CACHE_SIZE = 300;
+const PAGE_TRANSLATE_PENDING_CLASS = "ollama-page-translate-pending";
+const PAGE_TRANSLATE_RETRY_DELAY_MS = 8000;
+const PAGE_TRANSLATE_RETRY_DELAY_RATE_LIMIT_MS = 60000;
+const THINK_TAG_RE = /<\/?think\b[^>]*>/i;
+const RATE_LIMIT_ERROR_RE =
+  /(?:\b429\b|rate[ -]?limit|too many requests|usage limit|quota)/i;
+
+function normalizeText(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function rectIntersectsViewport(rect) {
+  if (!rect) return false;
+  if (rect.width < 1 || rect.height < 1) return false;
+  return (
+    rect.bottom > 0 &&
+    rect.right > 0 &&
+    rect.top < window.innerHeight &&
+    rect.left < window.innerWidth
+  );
+}
+
+function isElementVisible(element) {
+  if (!element || !(element instanceof HTMLElement)) return false;
+  let current = element;
+  while (current && current instanceof HTMLElement) {
+    const style = window.getComputedStyle(current);
+    if (
+      style.display === "none" ||
+      style.visibility === "hidden" ||
+      Number(style.opacity) <= 0.01 ||
+      current.hidden ||
+      current.getAttribute("aria-hidden") === "true"
+    ) {
+      return false;
+    }
+    current = current.parentElement;
+  }
+
+  return rectIntersectsViewport(element.getBoundingClientRect());
+}
+
+function isEditable(element) {
+  return !!(
+    element &&
+    element.closest &&
+    element.closest(
+      'input, textarea, select, [contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]',
+    )
+  );
+}
+
+function makeCacheWriter(cacheMap) {
+  return function writeCache(key, value) {
+    if (!key || !value) return;
+    if (cacheMap.has(key)) {
+      cacheMap.set(key, value);
+      return;
+    }
+    if (cacheMap.size >= PAGE_TRANSLATE_MAX_CACHE_SIZE) {
+      const oldestKey = cacheMap.keys().next().value;
+      if (oldestKey) cacheMap.delete(oldestKey);
+    }
+    cacheMap.set(key, value);
+  };
+}
+
+function normalizePositiveInt(value, min, max, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(number)));
+}
+
+function isRateLimitedError(value) {
+  return RATE_LIMIT_ERROR_RE.test(String(value || ""));
+}
+
+function computeNodePriority(text, rect) {
+  const lengthScore = Math.min(String(text || "").length, 240);
+  const wordScore = Math.min(String(text || "").split(/\s+/).length * 8, 120);
+  const centerY = window.innerHeight * 0.45;
+  const rectCenterY = rect ? (rect.top + rect.bottom) / 2 : centerY;
+  const centerBias = Math.max(0, 120 - Math.abs(rectCenterY - centerY));
+  return lengthScore + wordScore + centerBias;
+}
+
+export function createVisualPageTranslator({
+  requestChunkTranslation,
+  requestBatchTranslation,
+  onStatusMessage,
+  shouldSkipText,
+  isUiElement,
+  initialOptions = {},
+}) {
+  const translatedNodes = new WeakSet();
+  const pendingNodes = new WeakSet();
+  const pendingParentCount = new Map();
+  const failedNodeRetryAt = new WeakMap();
+  const translationCache = new Map();
+  const writeCache = makeCacheWriter(translationCache);
+  const queue = [];
+
+  let active = false;
+  let inFlightCount = 0;
+  let scanTimerId = null;
+  let mutationObserver = null;
+  let maxConcurrent = normalizePositiveInt(
+    initialOptions.maxConcurrent,
+    1,
+    8,
+    PAGE_TRANSLATE_DEFAULT_CONCURRENT,
+  );
+  let batchSize = normalizePositiveInt(
+    initialOptions.batchSize,
+    1,
+    12,
+    PAGE_TRANSLATE_DEFAULT_BATCH_SIZE,
+  );
+  let hasShownRateLimitMessage = false;
+
+  function clearScanTimer() {
+    if (scanTimerId !== null) {
+      clearTimeout(scanTimerId);
+      scanTimerId = null;
+    }
+  }
+
+  function disconnectMutationObserver() {
+    if (!mutationObserver) return;
+    mutationObserver.disconnect();
+    mutationObserver = null;
+  }
+
+  function ensureMutationObserver() {
+    if (mutationObserver || !document.body) return;
+    mutationObserver = new MutationObserver((mutations) => {
+      if (!active) return;
+      for (const mutation of mutations) {
+        if (mutation.type === "childList") {
+          if (mutation.addedNodes?.length) {
+            scheduleScan(false);
+            return;
+          }
+        } else if (mutation.type === "characterData") {
+          scheduleScan(false);
+          return;
+        }
+      }
+    });
+
+    mutationObserver.observe(document.body, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+    });
+  }
+
+  function isNodeEligible(node) {
+    if (!node || node.nodeType !== Node.TEXT_NODE) return false;
+    const parent = node.parentElement;
+    if (!parent) return false;
+    if (translatedNodes.has(node) || pendingNodes.has(node)) return false;
+    const retryAt = failedNodeRetryAt.get(node) || 0;
+    if (retryAt > Date.now()) return false;
+    if (IGNORE_TAGS.has(parent.tagName)) return false;
+    if (isEditable(parent)) return false;
+    if (typeof isUiElement === "function" && isUiElement(parent)) return false;
+    if (!isElementVisible(parent)) return false;
+
+    const text = normalizeText(node.textContent);
+    if (!text || text.length < 2) return false;
+    if (!SIGNIFICANT_CHAR_RE.test(text)) return false;
+    if (typeof shouldSkipText === "function" && shouldSkipText(text)) return false;
+
+    return true;
+  }
+
+  function setNodePendingState(node, isPending) {
+    const parent = node?.parentElement;
+    if (!parent) return;
+
+    const currentCount = pendingParentCount.get(parent) || 0;
+    if (isPending) {
+      const nextCount = currentCount + 1;
+      pendingParentCount.set(parent, nextCount);
+      if (currentCount === 0) {
+        parent.classList.add(PAGE_TRANSLATE_PENDING_CLASS);
+      }
+      return;
+    }
+
+    if (currentCount <= 1) {
+      pendingParentCount.delete(parent);
+      parent.classList.remove(PAGE_TRANSLATE_PENDING_CLASS);
+      return;
+    }
+    pendingParentCount.set(parent, currentCount - 1);
+  }
+
+  function collectVisibleTextNodes() {
+    const root = document.body;
+    if (!root) return [];
+
+    const walker = document.createTreeWalker(
+      root,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode(node) {
+          return isNodeEligible(node)
+            ? NodeFilter.FILTER_ACCEPT
+            : NodeFilter.FILTER_REJECT;
+        },
+      },
+    );
+
+    const nodes = [];
+    let current = walker.nextNode();
+    while (current) {
+      const text = normalizeText(current.textContent);
+      if (!text) {
+        translatedNodes.add(current);
+      } else {
+        const rect = current.parentElement?.getBoundingClientRect?.() || null;
+        nodes.push({
+          node: current,
+          text,
+          top: rect?.top ?? 0,
+          priority: computeNodePriority(text, rect),
+        });
+      }
+      if (nodes.length >= PAGE_TRANSLATE_MAX_SCAN_NODES) break;
+      current = walker.nextNode();
+    }
+    nodes.sort((a, b) => b.priority - a.priority || a.top - b.top);
+    return nodes;
+  }
+
+  async function processQueueBatch(tasks) {
+    const translations = new Array(tasks.length).fill("");
+    const successFlags = new Array(tasks.length).fill(false);
+    const unresolved = [];
+
+    tasks.forEach((task, index) => {
+      if (!task?.node?.isConnected) return;
+      const cached = translationCache.get(task.text);
+      if (cached) {
+        translations[index] = cached;
+        return;
+      }
+      unresolved.push({ index, task });
+    });
+
+    if (unresolved.length > 0) {
+      let resolvedBatchTranslations = [];
+      const shouldUseBatch =
+        typeof requestBatchTranslation === "function" && unresolved.length > 1;
+
+      if (shouldUseBatch) {
+        const response = await requestBatchTranslation(
+          unresolved.map((item) => item.task.text),
+        );
+        if (!response?.ok && isRateLimitedError(response?.error)) {
+          const rateLimitError = new Error(response.error || "rate_limited");
+          rateLimitError.code = "RATE_LIMIT";
+          throw rateLimitError;
+        }
+        if (
+          response?.ok &&
+          Array.isArray(response.translations) &&
+          response.translations.length === unresolved.length
+        ) {
+          resolvedBatchTranslations = response.translations.map((item) =>
+            normalizeText(item),
+          );
+        }
+      }
+
+      if (resolvedBatchTranslations.length !== unresolved.length) {
+        if (shouldUseBatch) {
+          // 批量失败时不再退化为逐条请求，避免请求风暴与额度瞬时耗尽
+          resolvedBatchTranslations = new Array(unresolved.length).fill("");
+        } else {
+          resolvedBatchTranslations = [];
+          for (const item of unresolved) {
+            const response = await requestChunkTranslation(item.task.text);
+            if (!response?.ok && isRateLimitedError(response?.error)) {
+              const rateLimitError = new Error(response.error || "rate_limited");
+              rateLimitError.code = "RATE_LIMIT";
+              throw rateLimitError;
+            }
+            const translated = response?.ok
+              ? normalizeText(response.translation || "")
+              : "";
+            resolvedBatchTranslations.push(translated);
+          }
+        }
+      }
+
+      unresolved.forEach((item, idx) => {
+        const translated = resolvedBatchTranslations[idx] || "";
+        if (!translated) return;
+        translations[item.index] = translated;
+        writeCache(item.task.text, translated);
+      });
+    }
+
+    tasks.forEach((task, index) => {
+      const translated = translations[index];
+      if (!translated || !task?.node?.isConnected) return;
+      if (THINK_TAG_RE.test(translated)) return;
+      const currentText = normalizeText(task.node.textContent);
+      if (!currentText || currentText !== task.text) return;
+      task.node.textContent = translated;
+      successFlags[index] = true;
+    });
+
+    return successFlags;
+  }
+
+  function scheduleScan(immediate = false) {
+    if (!active) return;
+    clearScanTimer();
+    if (immediate) {
+      scanVisibleAndPump();
+      return;
+    }
+    scanTimerId = window.setTimeout(() => {
+      scanTimerId = null;
+      scanVisibleAndPump();
+    }, PAGE_TRANSLATE_SCAN_DEBOUNCE_MS);
+  }
+
+  function scanVisibleAndPump() {
+    if (!active) return;
+
+    const visibleNodes = collectVisibleTextNodes();
+    for (const item of visibleNodes) {
+      if (queue.length >= PAGE_TRANSLATE_MAX_QUEUE_SIZE) break;
+      const { node, text } = item;
+      pendingNodes.add(node);
+      setNodePendingState(node, true);
+      queue.push({ node, text });
+    }
+
+    pumpQueue();
+  }
+
+  function pumpQueue() {
+    if (!active) return;
+
+    while (inFlightCount < maxConcurrent && queue.length > 0) {
+      const currentBatchSize = Math.min(batchSize, queue.length);
+      const tasks = queue.splice(0, currentBatchSize);
+      inFlightCount += 1;
+      void processQueueBatch(tasks)
+        .then((successFlags = []) => {
+          tasks.forEach((task, index) => {
+            setNodePendingState(task.node, false);
+            pendingNodes.delete(task.node);
+            if (successFlags[index]) {
+              translatedNodes.add(task.node);
+              failedNodeRetryAt.delete(task.node);
+            } else if (task?.node?.isConnected) {
+              failedNodeRetryAt.set(
+                task.node,
+                Date.now() + PAGE_TRANSLATE_RETRY_DELAY_MS,
+              );
+            }
+          });
+        })
+        .catch((error) => {
+          const rateLimited =
+            error?.code === "RATE_LIMIT" ||
+            isRateLimitedError(error?.message) ||
+            isRateLimitedError(error);
+          tasks.forEach((task) => {
+            setNodePendingState(task.node, false);
+            pendingNodes.delete(task.node);
+            if (task?.node?.isConnected) {
+              failedNodeRetryAt.set(
+                task.node,
+                Date.now() +
+                  (rateLimited
+                    ? PAGE_TRANSLATE_RETRY_DELAY_RATE_LIMIT_MS
+                    : PAGE_TRANSLATE_RETRY_DELAY_MS),
+              );
+            }
+          });
+          if (rateLimited) {
+            queue.length = 0;
+            if (!hasShownRateLimitMessage && typeof onStatusMessage === "function") {
+              hasShownRateLimitMessage = true;
+              onStatusMessage("翻译额度不足/触发限流，已暂停整页翻译。");
+            }
+            stop();
+          }
+        })
+        .finally(() => {
+          inFlightCount -= 1;
+          if (active && queue.length > 0) {
+            pumpQueue();
+            return;
+          }
+          if (active && queue.length === 0 && inFlightCount === 0) {
+            // 当前批次完成后再次扫描，继续处理同一屏剩余节点
+            scheduleScan(false);
+          }
+        });
+    }
+  }
+
+  function start() {
+    hasShownRateLimitMessage = false;
+    if (!active) {
+      active = true;
+      ensureMutationObserver();
+      if (typeof onStatusMessage === "function") {
+        onStatusMessage("已开始整页翻译：先翻译可视区域，滚动后继续翻译。");
+      }
+    } else if (typeof onStatusMessage === "function") {
+      onStatusMessage("继续翻译当前可视区域内容。");
+    }
+
+    scheduleScan(true);
+  }
+
+  function handleViewportChanged() {
+    if (!active) return;
+    scheduleScan(false);
+  }
+
+  function stop() {
+    active = false;
+    clearScanTimer();
+    disconnectMutationObserver();
+    queue.length = 0;
+    for (const element of pendingParentCount.keys()) {
+      element.classList.remove(PAGE_TRANSLATE_PENDING_CLASS);
+    }
+    pendingParentCount.clear();
+  }
+
+  function updateOptions(nextOptions = {}) {
+    maxConcurrent = normalizePositiveInt(
+      nextOptions.maxConcurrent,
+      1,
+      8,
+      maxConcurrent,
+    );
+    batchSize = normalizePositiveInt(nextOptions.batchSize, 1, 12, batchSize);
+    if (active) {
+      pumpQueue();
+    }
+  }
+
+  return {
+    start,
+    stop,
+    handleViewportChanged,
+    updateOptions,
+    isActive() {
+      return active;
+    },
+  };
+}

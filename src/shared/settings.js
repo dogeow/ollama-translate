@@ -11,12 +11,21 @@ import {
   DEFAULT_OLLAMA_URL,
   DEFAULT_OLLAMA_MODEL,
   DEFAULT_MINIMAX_API_URL,
+  DEFAULT_MINIMAX_API_URL_CN,
+  DEFAULT_MINIMAX_API_URL_GLOBAL,
   DEFAULT_MINIMAX_API_KEY,
+  DEFAULT_MINIMAX_API_KEY_CN,
+  DEFAULT_MINIMAX_API_KEY_GLOBAL,
+  DEFAULT_MINIMAX_REGION,
+  MINIMAX_REGION_CN,
+  MINIMAX_REGION_GLOBAL,
   DEFAULT_MINIMAX_MODEL,
   DEFAULT_TRANSLATE_TARGET_LANG,
   DEFAULT_AUTO_TRANSLATE_MODE,
   DEFAULT_HOVER_TRANSLATE_SCOPE,
   DEFAULT_HOVER_TRANSLATE_DELAY_MS,
+  DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
+  DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
   DEFAULT_LEARNING_MODE_ENABLED,
 } from "./constants.js";
 
@@ -28,12 +37,17 @@ export const DEFAULT_SETTINGS = {
   ollamaUrl: DEFAULT_OLLAMA_URL,
   ollamaModel: DEFAULT_OLLAMA_MODEL,
   minimaxApiUrl: DEFAULT_MINIMAX_API_URL,
+  minimaxRegion: DEFAULT_MINIMAX_REGION,
   minimaxApiKey: DEFAULT_MINIMAX_API_KEY,
+  minimaxApiKeyCn: DEFAULT_MINIMAX_API_KEY_CN,
+  minimaxApiKeyGlobal: DEFAULT_MINIMAX_API_KEY_GLOBAL,
   minimaxModel: DEFAULT_MINIMAX_MODEL,
   translateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
   autoTranslateMode: DEFAULT_AUTO_TRANSLATE_MODE,
   hoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
   hoverTranslateDelayMs: DEFAULT_HOVER_TRANSLATE_DELAY_MS,
+  pageTranslateConcurrency: DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
+  pageTranslateBatchSize: DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
   learningModeEnabled: DEFAULT_LEARNING_MODE_ENABLED,
 };
 
@@ -56,6 +70,83 @@ export function normalizeMiniMaxApiUrl(value) {
   if (!raw) return DEFAULT_SETTINGS.minimaxApiUrl;
   const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
   return withProtocol.replace(/\/$/, "");
+}
+
+export function normalizeMiniMaxRegion(value) {
+  return value === MINIMAX_REGION_GLOBAL
+    ? MINIMAX_REGION_GLOBAL
+    : MINIMAX_REGION_CN;
+}
+
+export function getDefaultMiniMaxApiUrlByRegion(region) {
+  return normalizeMiniMaxRegion(region) === MINIMAX_REGION_GLOBAL
+    ? DEFAULT_MINIMAX_API_URL_GLOBAL
+    : DEFAULT_MINIMAX_API_URL_CN;
+}
+
+/**
+ * 判断 MiniMax API 地址是否为海外域名（minimax.io）
+ * @param {string} value
+ * @returns {boolean}
+ */
+export function isMiniMaxGlobalApiUrl(value) {
+  const normalized = normalizeMiniMaxApiUrl(value);
+  try {
+    const hostname = new URL(normalized).hostname.toLowerCase();
+    return hostname === "minimax.io" || hostname.endsWith(".minimax.io");
+  } catch (_) {
+    return false;
+  }
+}
+
+function resolveMiniMaxRegionFromInput(input = {}) {
+  if (input.minimaxRegion) {
+    return normalizeMiniMaxRegion(input.minimaxRegion);
+  }
+  return isMiniMaxGlobalApiUrl(input.minimaxApiUrl)
+    ? MINIMAX_REGION_GLOBAL
+    : MINIMAX_REGION_CN;
+}
+
+/**
+ * 根据当前 MiniMax API 地址选择对应 API Key（海外/国内）
+ * 兼容旧版 minimaxApiKey 作为兜底。
+ * @param {object} input
+ * @param {string} input.minimaxApiUrl
+ * @param {string} [input.minimaxApiKeyCn]
+ * @param {string} [input.minimaxApiKeyGlobal]
+ * @param {string} [input.minimaxApiKey] - 旧字段
+ * @returns {string}
+ */
+export function resolveMiniMaxApiKey(input = {}) {
+  const region = resolveMiniMaxRegionFromInput(input);
+  const cnKey = String(
+    input.minimaxApiKeyCn ?? input.minimaxApiKey ?? DEFAULT_MINIMAX_API_KEY_CN,
+  ).trim();
+  const globalKey = String(
+    input.minimaxApiKeyGlobal ??
+      input.minimaxApiKey ??
+      DEFAULT_MINIMAX_API_KEY_GLOBAL,
+  ).trim();
+  const legacyKey = String(input.minimaxApiKey ?? DEFAULT_MINIMAX_API_KEY).trim();
+
+  if (region === MINIMAX_REGION_GLOBAL) {
+    return globalKey || legacyKey;
+  }
+  return cnKey || legacyKey;
+}
+
+export function getMiniMaxApiKeyLabel(input) {
+  const region =
+    typeof input === "string"
+      ? isMiniMaxGlobalApiUrl(input)
+        ? MINIMAX_REGION_GLOBAL
+        : MINIMAX_REGION_CN
+      : resolveMiniMaxRegionFromInput(input || {});
+
+  return region === MINIMAX_REGION_GLOBAL
+    ? "MiniMax 海外 API Key（minimax.io）"
+    : "MiniMax 国内 API Key（minimaxi.com）";
 }
 
 /**
@@ -94,11 +185,60 @@ export function normalizeHoverTranslateDelayMs(value) {
 }
 
 /**
+ * 规范化整页翻译并发数
+ * @param {string|number} value
+ * @returns {number} 1-8
+ */
+export function normalizePageTranslateConcurrency(value) {
+  if (value === "" || value == null)
+    return DEFAULT_SETTINGS.pageTranslateConcurrency;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return DEFAULT_SETTINGS.pageTranslateConcurrency;
+  return Math.min(8, Math.max(1, Math.round(number)));
+}
+
+/**
+ * 规范化整页翻译批量条数
+ * @param {string|number} value
+ * @returns {number} 1-12
+ */
+export function normalizePageTranslateBatchSize(value) {
+  if (value === "" || value == null)
+    return DEFAULT_SETTINGS.pageTranslateBatchSize;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return DEFAULT_SETTINGS.pageTranslateBatchSize;
+  return Math.min(12, Math.max(1, Math.round(number)));
+}
+
+/**
  * 规范化所有设置
  * @param {object} settings - 原始设置对象
  * @returns {object} 规范化后的设置对象
  */
 export function normalizeAllSettings(settings) {
+  const minimaxRegion = resolveMiniMaxRegionFromInput(settings);
+  const minimaxApiUrlRaw = String(settings.minimaxApiUrl || "").trim();
+  const minimaxApiUrl = minimaxApiUrlRaw
+    ? normalizeMiniMaxApiUrl(minimaxApiUrlRaw)
+    : getDefaultMiniMaxApiUrlByRegion(minimaxRegion);
+  const minimaxApiKeyCn = String(
+    settings.minimaxApiKeyCn ??
+      settings.minimaxApiKey ??
+      DEFAULT_SETTINGS.minimaxApiKeyCn,
+  ).trim();
+  const minimaxApiKeyGlobal = String(
+    settings.minimaxApiKeyGlobal ??
+      settings.minimaxApiKey ??
+      DEFAULT_SETTINGS.minimaxApiKeyGlobal,
+  ).trim();
+  const minimaxApiKey = resolveMiniMaxApiKey({
+    minimaxRegion,
+    minimaxApiUrl,
+    minimaxApiKeyCn,
+    minimaxApiKeyGlobal,
+    minimaxApiKey: settings.minimaxApiKey,
+  });
+
   return {
     ollamaProvider: normalizeTranslateProvider(settings.ollamaProvider),
     ollamaUrl: (settings.ollamaUrl || DEFAULT_SETTINGS.ollamaUrl).replace(
@@ -106,10 +246,11 @@ export function normalizeAllSettings(settings) {
       "",
     ),
     ollamaModel: settings.ollamaModel || DEFAULT_SETTINGS.ollamaModel,
-    minimaxApiUrl: normalizeMiniMaxApiUrl(settings.minimaxApiUrl),
-    minimaxApiKey: String(
-      settings.minimaxApiKey ?? DEFAULT_SETTINGS.minimaxApiKey,
-    ).trim(),
+    minimaxApiUrl,
+    minimaxRegion,
+    minimaxApiKey,
+    minimaxApiKeyCn,
+    minimaxApiKeyGlobal,
     minimaxModel: settings.minimaxModel || DEFAULT_SETTINGS.minimaxModel,
     ollamaTranslateTargetLang:
       settings.ollamaTranslateTargetLang ||
@@ -123,6 +264,12 @@ export function normalizeAllSettings(settings) {
     ),
     ollamaHoverTranslateDelayMs: normalizeHoverTranslateDelayMs(
       settings.ollamaHoverTranslateDelayMs,
+    ),
+    ollamaPageTranslateConcurrency: normalizePageTranslateConcurrency(
+      settings.ollamaPageTranslateConcurrency,
+    ),
+    ollamaPageTranslateBatchSize: normalizePageTranslateBatchSize(
+      settings.ollamaPageTranslateBatchSize,
     ),
     ollamaLearningModeEnabled: !!settings.ollamaLearningModeEnabled,
   };

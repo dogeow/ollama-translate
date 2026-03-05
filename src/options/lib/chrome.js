@@ -28,6 +28,23 @@ export function storageLocalGet(key) {
   );
 }
 
+export function storageLocalGetValue(key, fallback = null) {
+  return wrapChromeCallback((cb) =>
+    chrome.storage.local.get(key, (v) => {
+      const value = v?.[key];
+      cb(value === undefined ? fallback : value);
+    }),
+  );
+}
+
+export function storageLocalSet(value) {
+  return wrapChromeCallback((cb) => chrome.storage.local.set(value, cb));
+}
+
+export function storageLocalRemove(key) {
+  return wrapChromeCallback((cb) => chrome.storage.local.remove(key, cb));
+}
+
 export function runtimeSendMessage(message) {
   return wrapChromeCallback((cb) => chrome.runtime.sendMessage(message, cb));
 }
