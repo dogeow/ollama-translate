@@ -423,6 +423,7 @@ body {
 }
 
 .field input[type='text'],
+.field input[type='password'],
 .field-input {
   width: 100%;
   padding: 10px 14px;
@@ -437,6 +438,7 @@ body {
 }
 
 .field input[type='text']:focus,
+.field input[type='password']:focus,
 .field-input:focus {
   outline: none;
   border-color: var(--accent);
@@ -444,6 +446,7 @@ body {
 }
 
 .field input[type='text']::placeholder,
+.field input[type='password']::placeholder,
 .field-input::placeholder {
   color: var(--text-disabled);
 }

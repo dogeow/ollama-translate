@@ -1,5 +1,15 @@
 import { LANG_OPTIONS } from "../../shared/constants.js";
 
+const TRANSLATE_RESULT_CLASSES = {
+  error: "test-result-block error",
+  empty: "test-result-block empty",
+  normal: "test-result-block",
+};
+
+function getTranslateResultClass(tone) {
+  return TRANSLATE_RESULT_CLASSES[tone] || TRANSLATE_RESULT_CLASSES.normal;
+}
+
 export function TranslateTestTab({
   testInput,
   setTestInput,
@@ -13,12 +23,9 @@ export function TranslateTestTab({
   runDetectLanguage,
   runTranslateTest,
 }) {
-  const testTranslateClassName =
-    testTranslateResult.tone === "error"
-      ? "test-result-block error"
-      : testTranslateResult.tone === "empty"
-        ? "test-result-block empty"
-        : "test-result-block";
+  const testTranslateClassName = getTranslateResultClass(
+    testTranslateResult.tone,
+  );
 
   return (
     <div className="card card-translate-test">
@@ -36,7 +43,10 @@ export function TranslateTestTab({
       </div>
       <div className="field translate-test-actions-wrap">
         <div className="field translate-test-actions">
-          <label htmlFor="ollamaTestSourceLang" className="translate-test-actions__label">
+          <label
+            htmlFor="ollamaTestSourceLang"
+            className="translate-test-actions__label"
+          >
             输入语言
           </label>
           <div className="translate-test-actions__row">
@@ -53,7 +63,11 @@ export function TranslateTestTab({
                 </option>
               ))}
             </select>
-            <button type="button" className="btn btn-secondary" onClick={runDetectLanguage}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={runDetectLanguage}
+            >
               识别语言
             </button>
             <span
@@ -66,7 +80,10 @@ export function TranslateTestTab({
         </div>
 
         <div className="field translate-test-actions">
-          <label htmlFor="ollamaTestLang" className="translate-test-actions__label">
+          <label
+            htmlFor="ollamaTestLang"
+            className="translate-test-actions__label"
+          >
             翻译为
           </label>
           <div className="translate-test-actions__row">
@@ -82,7 +99,11 @@ export function TranslateTestTab({
                 </option>
               ))}
             </select>
-            <button type="button" className="btn btn-secondary" onClick={runTranslateTest}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={runTranslateTest}
+            >
               测试翻译
             </button>
             <span

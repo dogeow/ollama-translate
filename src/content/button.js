@@ -1,5 +1,5 @@
 /** 悬浮「翻译」按钮：显示、隐藏与点击 */
-import { BUTTON_ID } from "./constants.js";
+import { BUTTON_ID, isAppEnabled } from "./constants.js";
 import { injectStyles } from "./styles.js";
 import { getSelectionRect, getSelectionText } from "./selection.js";
 
@@ -37,13 +37,6 @@ export function hideButton() {
 export function getButtonOrSelectionText() {
   const btn = document.getElementById(BUTTON_ID);
   return (btn && btn.dataset.text) || getSelectionText();
-}
-
-/** 检查应用是否启用 */
-export function isAppEnabled() {
-  return chrome.storage.sync.get("ollamaAppEnabled").then((value) => {
-    return value.ollamaAppEnabled !== false;
-  }).catch(() => true);
 }
 
 /** 显示按钮前检查应用是否启用 */

@@ -3,11 +3,34 @@ import { TARGET_LANG_LABELS } from "../constants.js";
 import { getModelName, getModelDisplay } from "../../shared/model-utils.js";
 import { getOllamaErrorMessage } from "../../shared/ollama-errors.js";
 
-function SentenceStudyPlaceholder() {
+function getThinkingLines(text) {
+  return String(text || "")
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function getLatestThinkingPreview(text, lineCount = 3) {
+  const lines = getThinkingLines(text);
+  if (lines.length === 0) return "";
+  return lines.slice(-lineCount).join("\n");
+}
+
+function SentenceStudyPlaceholder({ thinking = "" }) {
+  const preview = getLatestThinkingPreview(thinking, 3);
   return (
     <div className="ollama-tip-grammar-section">
       <div className="ollama-tip-label">句型学习</div>
       <div className="ollama-tip-loading">分析中...</div>
+      {preview ? (
+        <div className="ollama-tip-thinking">
+          <div className="ollama-tip-thinking-label">句型学习思考过程（最新三行）</div>
+          <div className="ollama-tip-thinking-content ollama-tip-thinking-content--preview">
+            {preview}
+          </div>
+        </div>
+      ) : null}
       <div className="ollama-tip-placeholder ollama-tip-placeholder--title"></div>
       <div className="ollama-tip-placeholder"></div>
       <div className="ollama-tip-placeholder"></div>
@@ -17,38 +40,64 @@ function SentenceStudyPlaceholder() {
 
 function PendingTranslationSection({ result }) {
   const hasThinking = !!String(result.thinking || "").trim();
-  const hasTranslation = !!String(result.translation || "").trim();
-  const loadingLabel = hasTranslation ? "生成中..." : hasThinking ? "思考中..." : "翻译中...";
+  const thinkingPreview = getLatestThinkingPreview(result.thinking, 3);
+  const loadingLabel = hasThinking ? "思考中..." : "翻译中...";
 
   return (
     <div className="ollama-tip-section">
       <div className="ollama-tip-label">译文</div>
       <div className="ollama-tip-loading">{loadingLabel}</div>
-      {hasThinking ? (
+      {hasThinking && thinkingPreview ? (
         <div className="ollama-tip-thinking">
-          <div className="ollama-tip-thinking-label">思考过程</div>
-          <div className="ollama-tip-thinking-content">{result.thinking}</div>
+          <div className="ollama-tip-thinking-label">思考过程（最新三行）</div>
+          <div className="ollama-tip-thinking-content ollama-tip-thinking-content--preview">
+            {thinkingPreview}
+          </div>
         </div>
       ) : null}
-      {hasTranslation ? (
-        <div className="ollama-tip-text ollama-tip-text--streaming">
-          {result.translation}
-          <span className="ollama-tip-streaming-cursor" aria-hidden="true"></span>
-        </div>
-      ) : (
-        <>
-          <div className="ollama-tip-placeholder"></div>
-          <div className="ollama-tip-placeholder ollama-tip-placeholder--short"></div>
-        </>
-      )}
+      <div className="ollama-tip-placeholder"></div>
+      <div className="ollama-tip-placeholder ollama-tip-placeholder--short"></div>
+    </div>
+  );
+}
+
+function ThinkingCollapsedSection({
+  thinking,
+  expanded,
+  onExpandedChange,
+  title = "思考过程（已折叠）",
+  wrapperClassName = "ollama-tip-section",
+}) {
+  const fullThinking = String(thinking || "").trim();
+  if (!fullThinking) return null;
+  const displayThinking = `<think>\n${fullThinking}\n</think>`;
+
+  return (
+    <div className={wrapperClassName}>
+      <details
+        className="ollama-tip-thinking-details"
+        open={expanded}
+        onToggle={(event) => onExpandedChange?.(event.currentTarget.open)}
+      >
+        <summary className="ollama-tip-thinking-summary">
+          <span className="ollama-tip-thinking-summary-title">{title}</span>
+        </summary>
+        <div className="ollama-tip-thinking-content">{displayThinking}</div>
+      </details>
     </div>
   );
 }
 
 function SentenceStudySection({ sentenceStudy }) {
-  if (!sentenceStudy || !Array.isArray(sentenceStudy.parts) || sentenceStudy.parts.length === 0) {
-    return null;
-  }
+  const parts = Array.isArray(sentenceStudy?.parts) ? sentenceStudy.parts : [];
+  const sentenceStudyThinking = String(sentenceStudy?.thinking || "").trim();
+  const [thinkingExpanded, setThinkingExpanded] = useState(false);
+
+  useEffect(() => {
+    setThinkingExpanded(false);
+  }, [sentenceStudyThinking, sentenceStudy?.pattern, parts.length]);
+
+  if (parts.length === 0) return null;
 
   return (
     <div className="ollama-tip-grammar-section">
@@ -57,7 +106,7 @@ function SentenceStudySection({ sentenceStudy }) {
         主句结构：{sentenceStudy.pattern || "句型分析"}
       </div>
       <div className="ollama-tip-grammar-parts">
-        {sentenceStudy.parts.map((part, index) => (
+        {parts.map((part, index) => (
           <div key={`${part.text}-${index}`} className="ollama-tip-grammar-part">
             <div className="ollama-tip-grammar-text">{part.text}</div>
             {part.translation ? (
@@ -69,6 +118,15 @@ function SentenceStudySection({ sentenceStudy }) {
           </div>
         ))}
       </div>
+      {sentenceStudyThinking ? (
+        <ThinkingCollapsedSection
+          thinking={sentenceStudyThinking}
+          expanded={thinkingExpanded}
+          onExpandedChange={setThinkingExpanded}
+          title="句型学习思考过程（已折叠）"
+          wrapperClassName="ollama-tip-grammar-thinking"
+        />
+      ) : null}
     </div>
   );
 }
@@ -133,7 +191,8 @@ function NeedModelSection({ result, onTranslateWithModel }) {
 }
 
 export function TipView({ result, onClose, onTranslateWithModel }) {
-  const [copyLabel, setCopyLabel] = useState("复制译文");
+  const [copied, setCopied] = useState(false);
+  const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const targetLabel =
     (result.targetLang && TARGET_LANG_LABELS[result.targetLang]) ||
     result.targetLang ||
@@ -141,15 +200,21 @@ export function TipView({ result, onClose, onTranslateWithModel }) {
   const modelLabel = result.model ? `模型：${result.model}` : "";
 
   useEffect(() => {
-    setCopyLabel("复制译文");
+    setCopied(false);
   }, [result.translation, result.requestId]);
+
+  useEffect(() => {
+    if (!result.pending) {
+      setThinkingExpanded(false);
+    }
+  }, [result.pending, result.requestId, result.sentenceStudyPending, result.sentenceStudy]);
 
   async function handleCopy() {
     if (!result.translation) return;
     try {
       await navigator.clipboard.writeText(result.translation);
-      setCopyLabel("已复制");
-      window.setTimeout(() => setCopyLabel("复制译文"), 1200);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
     } catch (_) {}
   }
 
@@ -159,14 +224,15 @@ export function TipView({ result, onClose, onTranslateWithModel }) {
     body = (
       <>
         <div className="ollama-tip-body">
-          {modelLabel ? <div className="ollama-tip-model">{modelLabel}</div> : null}
           <div className="ollama-tip-section">
             <div className="ollama-tip-label">原文</div>
             <div className="ollama-tip-text">{result.original || ""}</div>
           </div>
           <PendingTranslationSection result={result} />
         </div>
-        {result.learningModeEnabled ? <SentenceStudyPlaceholder /> : null}
+        {result.learningModeEnabled ? (
+          <SentenceStudyPlaceholder thinking={result.sentenceStudyThinking} />
+        ) : null}
       </>
     );
   } else if (result.needModel && Array.isArray(result.models) && result.models.length > 0) {
@@ -190,7 +256,6 @@ export function TipView({ result, onClose, onTranslateWithModel }) {
     body = (
       <>
         <div className="ollama-tip-body">
-          {modelLabel ? <div className="ollama-tip-model">{modelLabel}</div> : null}
           {result.error ? (
             <div className="ollama-tip-section">
               <div className="ollama-tip-error">{getOllamaErrorMessage(result.error)}</div>
@@ -202,19 +267,34 @@ export function TipView({ result, onClose, onTranslateWithModel }) {
           </div>
           <div className="ollama-tip-section">
             <div className="ollama-tip-label">译文</div>
-            <div className="ollama-tip-text">
-              {result.error ? "—" : result.translation || "（无译文）"}
+            <div className="ollama-tip-translation-inline">
+              <span className="ollama-tip-translation-content">
+                {result.error ? "—" : result.translation || "（无译文）"}
+              </span>
+              {!result.error && result.translation ? (
+                <button
+                  type="button"
+                  className="ollama-tip-copy"
+                  aria-label={copied ? "已复制" : "复制译文"}
+                  title={copied ? "已复制" : "复制译文"}
+                  onClick={() => void handleCopy()}
+                >
+                  {copied ? "✓" : "⎘"}
+                </button>
+              ) : null}
             </div>
           </div>
-          {!result.error && result.translation ? (
-            <button type="button" className="ollama-tip-copy" onClick={() => void handleCopy()}>
-              {copyLabel}
-            </button>
+          {result.thinking ? (
+            <ThinkingCollapsedSection
+              thinking={result.thinking}
+              expanded={thinkingExpanded}
+              onExpandedChange={setThinkingExpanded}
+            />
           ) : null}
         </div>
         {shouldShowSentenceStudy ? (
           result.sentenceStudyPending ? (
-            <SentenceStudyPlaceholder />
+            <SentenceStudyPlaceholder thinking={result.sentenceStudyThinking} />
           ) : result.sentenceStudy ? (
             <SentenceStudySection sentenceStudy={result.sentenceStudy} />
           ) : (
@@ -234,11 +314,18 @@ export function TipView({ result, onClose, onTranslateWithModel }) {
     <>
       <div className="ollama-tip-header">
         <span className="ollama-tip-title">翻译为：{targetLabel}</span>
-        <button type="button" className="ollama-tip-close" aria-label="关闭" onClick={onClose}>
-          ×
-        </button>
+        <div className="ollama-tip-header-actions">
+          {modelLabel ? (
+            <span className="ollama-tip-header-model" title={modelLabel}>
+              {modelLabel}
+            </span>
+          ) : null}
+          <button type="button" className="ollama-tip-close" aria-label="关闭" onClick={onClose}>
+            ×
+          </button>
+        </div>
       </div>
-      {body}
+      <div className="ollama-tip-content">{body}</div>
     </>
   );
 }

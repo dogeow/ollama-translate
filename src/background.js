@@ -2,7 +2,10 @@ import {
   checkOllamaAndGetModels,
   generateOllamaStreamingResponse,
 } from "./background/ollama.js";
-import { analyzeSentenceStudy } from "./background/sentenceStudy.js";
+import {
+  analyzeSentenceStudy,
+  hydrateSentenceStudyTranslations,
+} from "./background/sentenceStudy.js";
 import {
   compareExtensionVersions,
   createDefaultUpdateState,
@@ -15,15 +18,27 @@ import {
 import {
   normalizeAutoTranslateMode,
   normalizeHoverTranslateScope,
+  normalizeTranslateProvider,
 } from "./shared/settings.js";
 import {
+  PROVIDER_OLLAMA,
+  PROVIDER_MINIMAX,
+  DEFAULT_TRANSLATE_PROVIDER,
   DEFAULT_OLLAMA_URL,
   DEFAULT_OLLAMA_MODEL,
+  DEFAULT_MINIMAX_API_URL,
+  DEFAULT_MINIMAX_API_KEY,
+  DEFAULT_MINIMAX_MODEL,
   DEFAULT_TRANSLATE_TARGET_LANG,
   DEFAULT_LEARNING_MODE_ENABLED,
   DEFAULT_APP_ENABLED,
   TRANSLATE_RESULT_KEY,
 } from "./shared/constants.js";
+import { getOllamaErrorMessage } from "./shared/ollama-errors.js";
+import {
+  generateMiniMaxStreamingCompletion,
+  normalizeMiniMaxBaseUrl,
+} from "./shared/minimax-api.js";
 
 const LOG_PREFIX = "[Ollama 翻译]";
 const MENU_TRANSLATE_SELECTION = "ollama-translate";
@@ -34,6 +49,55 @@ const MENU_AUTO_MODE_HOVER = "ollama-auto-translate-mode-hover";
 const MENU_HOVER_SCOPE_PARENT = "ollama-hover-translate-scope";
 const MENU_HOVER_SCOPE_WORD = "ollama-hover-translate-scope-word";
 const MENU_HOVER_SCOPE_PARAGRAPH = "ollama-hover-translate-scope-paragraph";
+const THINK_BLOCK_RE = /<think\b[^>]*>([\s\S]*?)<\/think>/gi;
+const THINK_OPEN_TAG_RE = /<think\b[^>]*>/i;
+const MIN_THINK_PREVIEW_MS = 320;
+
+function normalizeDisplayText(text) {
+  return String(text || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function splitThinkingFromText(text) {
+  const raw = String(text || "");
+  if (!raw) return { translation: "", thinking: "" };
+
+  const thinkParts = [];
+  let stripped = raw.replace(THINK_BLOCK_RE, (_, inner = "") => {
+    const cleaned = normalizeDisplayText(inner);
+    if (cleaned) thinkParts.push(cleaned);
+    return "\n";
+  });
+
+  const danglingMatch = THINK_OPEN_TAG_RE.exec(stripped);
+  if (danglingMatch) {
+    const dangling = normalizeDisplayText(
+      stripped.slice(danglingMatch.index).replace(THINK_OPEN_TAG_RE, ""),
+    );
+    if (dangling) thinkParts.push(dangling);
+    stripped = stripped.slice(0, danglingMatch.index);
+  }
+
+  return {
+    translation: normalizeDisplayText(stripped),
+    thinking: normalizeDisplayText(thinkParts.join("\n\n")),
+  };
+}
+
+function mergeThinking(...segments) {
+  const uniqueSegments = [];
+  segments.forEach((segment) => {
+    const value = normalizeDisplayText(segment);
+    if (!value) return;
+    if (uniqueSegments.includes(value)) return;
+    uniqueSegments.push(value);
+  });
+
+  return uniqueSegments.join("\n\n");
+}
 
 async function sendTranslatePending(tabId, payload) {
   if (!tabId) return;
@@ -54,6 +118,8 @@ function buildPendingTranslatePayload({
   triggerSource,
   translation = null,
   thinking = null,
+  sentenceStudyThinking = null,
+  sentenceStudyPending = false,
 }) {
   return {
     original: text,
@@ -64,10 +130,16 @@ function buildPendingTranslatePayload({
     triggerSource,
     translation,
     thinking,
+    sentenceStudyThinking,
+    sentenceStudyPending,
   };
 }
 
-async function sendTranslateResult(tabId, payload, action = "showTranslateResult") {
+async function sendTranslateResult(
+  tabId,
+  payload,
+  action = "showTranslateResult",
+) {
   if (!tabId) return;
   await chrome.tabs
     .sendMessage(tabId, {
@@ -96,7 +168,9 @@ async function readMenuSettings() {
       stored.ollamaAutoTranslateMode,
       stored.ollamaAutoTranslateSelection,
     ),
-    hoverTranslateScope: normalizeHoverTranslateScope(stored.ollamaHoverTranslateScope),
+    hoverTranslateScope: normalizeHoverTranslateScope(
+      stored.ollamaHoverTranslateScope,
+    ),
     appEnabled: stored.ollamaAppEnabled,
   };
 }
@@ -204,7 +278,8 @@ async function updateActionBadge(updateState) {
       .catch(() => {});
     await chrome.action
       .setTitle({
-        title: `Ollama 翻译设置\n发现新版本 ${updateState.latestVersion || ""}`.trim(),
+        title:
+          `Ollama 翻译设置\n发现新版本 ${updateState.latestVersion || ""}`.trim(),
       })
       .catch(() => {});
     return;
@@ -274,7 +349,10 @@ async function checkForExtensionUpdate(options = {}) {
     }
 
     const payload = readUpdateFeed(await response.json());
-    const comparison = compareExtensionVersions(payload.version, currentVersion);
+    const comparison = compareExtensionVersions(
+      payload.version,
+      currentVersion,
+    );
 
     return persistUpdateState({
       status: comparison > 0 ? "available" : "up-to-date",
@@ -303,55 +381,72 @@ function createTranslateRequestId(requestId) {
   return `translate:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function continueSentenceStudy({
-  tabId,
-  base,
-  model,
+/**
+ * 构建翻译错误结果
+ */
+function buildErrorResult({
   original,
-  translation,
-  result,
+  targetLang,
+  error,
+  model = null,
+  models = null,
+  needModel = false,
+  learningModeEnabled,
+  requestId,
+  triggerSource,
 }) {
-  let sentenceStudy = null;
-
-  try {
-    sentenceStudy = await analyzeSentenceStudy(base, model, original, translation);
-  } catch (_) {
-    sentenceStudy = null;
-  }
-
-  const nextResult = {
-    ...result,
-    sentenceStudy,
+  return {
+    original,
+    translation: null,
+    error,
+    targetLang,
+    model,
+    ...(models && { models }),
+    needModel,
+    learningModeEnabled,
+    sentenceStudy: null,
+    sentenceStudyThinking: null,
     sentenceStudyPending: false,
+    requestId,
+    triggerSource,
   };
-
-  await persistTranslateResult(nextResult);
-  await sendTranslateResult(tabId, nextResult, "updateSentenceStudy");
 }
 
-async function translateWithOllama(text, tabId = null, options = {}) {
-  const {
-    ollamaUrl = DEFAULT_OLLAMA_URL,
-    ollamaModel = DEFAULT_OLLAMA_MODEL,
-    ollamaTranslateTargetLang = DEFAULT_TRANSLATE_TARGET_LANG,
-    ollamaLearningModeEnabled = DEFAULT_LEARNING_MODE_ENABLED,
-    ollamaAppEnabled = DEFAULT_APP_ENABLED,
-  } = await chrome.storage.sync.get({
+async function translateWithProvider(text, tabId = null, options = {}) {
+  const settings = await chrome.storage.sync.get({
+    ollamaProvider: DEFAULT_TRANSLATE_PROVIDER,
     ollamaUrl: DEFAULT_OLLAMA_URL,
     ollamaModel: DEFAULT_OLLAMA_MODEL,
+    minimaxApiUrl: DEFAULT_MINIMAX_API_URL,
+    minimaxApiKey: DEFAULT_MINIMAX_API_KEY,
+    minimaxModel: DEFAULT_MINIMAX_MODEL,
     ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
     ollamaLearningModeEnabled: DEFAULT_LEARNING_MODE_ENABLED,
     ollamaAppEnabled: DEFAULT_APP_ENABLED,
   });
+
   const {
     showPending = false,
     requestId = undefined,
     triggerSource = undefined,
   } = options;
   const resolvedRequestId = createTranslateRequestId(requestId);
+  const provider = normalizeTranslateProvider(settings.ollamaProvider);
+  const selectedModel =
+    provider === PROVIDER_MINIMAX
+      ? settings.minimaxModel || DEFAULT_MINIMAX_MODEL
+      : settings.ollamaModel;
+  const targetLang =
+    settings.ollamaTranslateTargetLang || DEFAULT_TRANSLATE_TARGET_LANG;
+  const learningModeEnabled =
+    !!settings.ollamaLearningModeEnabled;
 
-  if (!ollamaAppEnabled) {
-    console.log(LOG_PREFIX, "应用已禁用，静默忽略翻译请求:", text.substring(0, 30));
+  if (!settings.ollamaAppEnabled) {
+    console.log(
+      LOG_PREFIX,
+      "应用已禁用，静默忽略翻译请求:",
+      text.substring(0, 30),
+    );
     return null;
   }
 
@@ -360,128 +455,273 @@ async function translateWithOllama(text, tabId = null, options = {}) {
       tabId,
       buildPendingTranslatePayload({
         text,
-        targetLang: ollamaTranslateTargetLang || DEFAULT_TRANSLATE_TARGET_LANG,
-        model: ollamaModel || null,
-        learningModeEnabled: !!ollamaLearningModeEnabled,
+        targetLang,
+        model: selectedModel || null,
+        learningModeEnabled,
         requestId: resolvedRequestId,
         triggerSource,
       }),
     );
   }
 
-  if (!ollamaModel) {
-    const check = await checkOllamaAndGetModels(ollamaUrl);
-    if (check.error) {
-      const errorResult = {
-        original: text,
-        translation: null,
-        error: check.error === "403" ? "403" : "connection",
-        targetLang: ollamaTranslateTargetLang || DEFAULT_TRANSLATE_TARGET_LANG,
-        model: null,
-        needModel: true,
-        learningModeEnabled: !!ollamaLearningModeEnabled,
-        sentenceStudy: null,
-        sentenceStudyPending: false,
-        requestId: resolvedRequestId,
-        triggerSource,
-      };
-      await persistTranslateResult(errorResult);
-      return errorResult;
-    }
-
-    const errorResult = {
+  if (provider === PROVIDER_OLLAMA && !selectedModel) {
+    const check = await checkOllamaAndGetModels(settings.ollamaUrl);
+    const errorResult = buildErrorResult({
       original: text,
-      translation: null,
-      error: "no_model",
-      targetLang: ollamaTranslateTargetLang || DEFAULT_TRANSLATE_TARGET_LANG,
-      model: null,
+      targetLang,
+      error: check.error
+        ? check.error === "403"
+          ? "403"
+          : "connection"
+        : "no_model",
       models: check.models,
       needModel: true,
-      learningModeEnabled: !!ollamaLearningModeEnabled,
-      sentenceStudy: null,
-      sentenceStudyPending: false,
+      learningModeEnabled,
       requestId: resolvedRequestId,
       triggerSource,
-    };
+    });
     await persistTranslateResult(errorResult);
     return errorResult;
   }
 
-  const base = ollamaUrl.replace(/\/$/, "");
-  const targetLang = ollamaTranslateTargetLang || DEFAULT_TRANSLATE_TARGET_LANG;
+  if (provider === PROVIDER_MINIMAX && !String(settings.minimaxApiKey).trim()) {
+    const errorResult = buildErrorResult({
+      original: text,
+      targetLang,
+      error: "请先填写 MiniMax API Key。",
+      model: selectedModel || null,
+      needModel: false,
+      learningModeEnabled,
+      requestId: resolvedRequestId,
+      triggerSource,
+    });
+    await persistTranslateResult(errorResult);
+    return errorResult;
+  }
+
+  const base =
+    provider === PROVIDER_MINIMAX
+      ? normalizeMiniMaxBaseUrl(settings.minimaxApiUrl)
+      : settings.ollamaUrl.replace(/\/$/, "");
   const prompt = `Translate the following text to ${targetLang}. Only output the translation, no explanation or extra text.\n\n${text}`;
 
   let translation = "";
   let thinking = "";
   let error = null;
-  let lastPendingUpdateAt = 0;
+  let hasSentThinkingPreview = false;
+  let latestSentenceStudyThinking = "";
+  let firstSentenceStudyThinkingAt = 0;
+  let hasFinalTranslateResult = false;
+  let latestTranslateResult = null;
+  let stopPendingUpdates = false;
+  const MIN_SENTENCE_STUDY_THINK_PREVIEW_MS = 260;
+  const sentenceStudyApiKey =
+    provider === PROVIDER_MINIMAX ? String(settings.minimaxApiKey || "").trim() : "";
+  let sentenceStudyPromise = null;
 
   async function sendPendingProgress(force = false) {
     if (!showPending || !tabId) return;
+    if (stopPendingUpdates) return;
 
     const now = Date.now();
-    if (!force && now - lastPendingUpdateAt < 80) return;
+    if (!force && now - sendPendingProgress.lastUpdateAt < 80) return;
 
-    lastPendingUpdateAt = now;
+    sendPendingProgress.lastUpdateAt = now;
     await sendTranslatePending(
       tabId,
       buildPendingTranslatePayload({
         text,
         targetLang,
-        model: ollamaModel,
-        learningModeEnabled: !!ollamaLearningModeEnabled,
+        model: selectedModel,
+        learningModeEnabled,
         requestId: resolvedRequestId,
         triggerSource,
         translation: translation || null,
         thinking: thinking || null,
+        sentenceStudyThinking: latestSentenceStudyThinking || null,
+        sentenceStudyPending: learningModeEnabled,
       }),
     );
+    if (String(thinking || "").trim()) {
+      hasSentThinkingPreview = true;
+    }
+  }
+  sendPendingProgress.lastUpdateAt = 0;
+
+  const pushSentenceStudyThinking = (thinkingText) => {
+    const normalizedThinking = normalizeDisplayText(thinkingText);
+    if (!normalizedThinking) return;
+    if (normalizedThinking === latestSentenceStudyThinking) return;
+    latestSentenceStudyThinking = normalizedThinking;
+    if (!firstSentenceStudyThinkingAt) {
+      firstSentenceStudyThinkingAt = Date.now();
+    }
+
+    if (!hasFinalTranslateResult) {
+      void sendPendingProgress();
+      return;
+    }
+    if (!latestTranslateResult?.sentenceStudyPending) return;
+
+    const now = Date.now();
+    if (now - pushSentenceStudyThinking.lastUpdateAt < 80) return;
+    pushSentenceStudyThinking.lastUpdateAt = now;
+
+    void sendTranslateResult(
+      tabId,
+      {
+        ...latestTranslateResult,
+        sentenceStudy: null,
+        sentenceStudyThinking: latestSentenceStudyThinking,
+        sentenceStudyPending: true,
+      },
+      "updateSentenceStudy",
+    );
+  };
+  pushSentenceStudyThinking.lastUpdateAt = 0;
+
+  if (learningModeEnabled) {
+    sentenceStudyPromise = analyzeSentenceStudy(
+      base,
+      selectedModel,
+      text,
+      "",
+      {
+        provider,
+        apiKey: sentenceStudyApiKey,
+        onThinkingProgress: pushSentenceStudyThinking,
+      },
+    ).catch(() => null);
   }
 
   try {
-    const streamed = await generateOllamaStreamingResponse(base, ollamaModel, prompt, {
-      onChunk: (chunk) => {
-        translation = chunk.response || "";
-        thinking = chunk.thinking || "";
-        void sendPendingProgress();
-      },
-    });
-    translation = streamed.response || translation;
-    thinking = streamed.thinking || thinking;
-    await sendPendingProgress(true);
+    if (provider === PROVIDER_MINIMAX) {
+      const streamed = await generateMiniMaxStreamingCompletion(
+        base,
+        settings.minimaxApiKey,
+        selectedModel,
+        prompt,
+        {
+          onChunk: (chunk) => {
+            const parsed = splitThinkingFromText(chunk.response || "");
+            translation = parsed.translation;
+            thinking = mergeThinking(chunk.thinking || "", parsed.thinking);
+            void sendPendingProgress();
+          },
+        },
+      );
+      const parsedMiniMaxFinal = splitThinkingFromText(
+        streamed.response || translation,
+      );
+      translation = parsedMiniMaxFinal.translation;
+      thinking = mergeThinking(
+        streamed.thinking || thinking,
+        parsedMiniMaxFinal.thinking,
+      );
+      await sendPendingProgress(true);
+    } else {
+      const streamed = await generateOllamaStreamingResponse(
+        base,
+        selectedModel,
+        prompt,
+        {
+          onChunk: (chunk) => {
+            const parsed = splitThinkingFromText(chunk.response || "");
+            translation = parsed.translation;
+            thinking = mergeThinking(chunk.thinking || "", parsed.thinking);
+            void sendPendingProgress();
+          },
+        },
+      );
+      const parsedFinal = splitThinkingFromText(streamed.response || translation);
+      translation = parsedFinal.translation;
+      thinking = mergeThinking(streamed.thinking || thinking, parsedFinal.thinking);
+      await sendPendingProgress(true);
+    }
   } catch (e) {
-    error = e.message || String(e);
-    if (e.name === "TypeError" && (e.message || "").includes("fetch")) {
-      error =
-        "无法连接 Ollama。请确认本机已安装并启动 Ollama（终端运行 ollama serve），且扩展设置中地址为 http://127.0.0.1:11434";
+    error =
+      provider === PROVIDER_MINIMAX
+        ? e.message || String(e)
+        : getOllamaErrorMessage(e, { detailed: true });
+  }
+
+  const parsedOutput = splitThinkingFromText(translation);
+  translation = parsedOutput.translation;
+  thinking = mergeThinking(thinking, parsedOutput.thinking);
+
+  if (!error && showPending && tabId && thinking) {
+    if (!hasSentThinkingPreview) {
+      await sendPendingProgress(true);
+    }
+    const elapsedSinceLastPending = Date.now() - sendPendingProgress.lastUpdateAt;
+    if (elapsedSinceLastPending < MIN_THINK_PREVIEW_MS) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, MIN_THINK_PREVIEW_MS - elapsedSinceLastPending),
+      );
     }
   }
 
   const result = {
     original: text,
-    translation: translation || null,
+    translation: normalizeDisplayText(translation) || null,
     error,
     targetLang,
-    model: ollamaModel,
-    learningModeEnabled: !!ollamaLearningModeEnabled,
-    thinking: thinking || null,
+    model: selectedModel,
+    learningModeEnabled,
+    thinking: normalizeDisplayText(thinking) || null,
     sentenceStudy: null,
-    sentenceStudyPending: !error && !!translation && !!ollamaLearningModeEnabled,
+    sentenceStudyThinking: latestSentenceStudyThinking || null,
+    sentenceStudyPending:
+      !error && !!translation && learningModeEnabled && !!sentenceStudyPromise,
     requestId: resolvedRequestId,
     triggerSource,
   };
 
+  stopPendingUpdates = true;
+  hasFinalTranslateResult = true;
+  latestTranslateResult = result;
+
   await persistTranslateResult(result);
 
-  if (result.sentenceStudyPending) {
-    void continueSentenceStudy({
-      tabId,
-      base,
-      model: ollamaModel,
-      original: text,
-      translation,
-      result,
-    });
+  if (result.sentenceStudyPending && sentenceStudyPromise) {
+    void (async () => {
+      const sentenceStudyRaw = await sentenceStudyPromise.catch(() => null);
+      const sentenceStudy = sentenceStudyRaw
+        ? await hydrateSentenceStudyTranslations(
+            sentenceStudyRaw,
+            normalizeDisplayText(translation) || "",
+          ).catch(() => sentenceStudyRaw)
+        : null;
+
+      if (
+        latestSentenceStudyThinking &&
+        firstSentenceStudyThinkingAt &&
+        Date.now() - firstSentenceStudyThinkingAt <
+          MIN_SENTENCE_STUDY_THINK_PREVIEW_MS
+      ) {
+        await new Promise((resolve) =>
+          setTimeout(
+            resolve,
+            MIN_SENTENCE_STUDY_THINK_PREVIEW_MS -
+              (Date.now() - firstSentenceStudyThinkingAt),
+          ),
+        );
+      }
+
+      const nextResult = {
+        ...result,
+        sentenceStudy,
+        sentenceStudyThinking:
+          normalizeDisplayText(sentenceStudy?.thinking || "") ||
+          latestSentenceStudyThinking ||
+          null,
+        sentenceStudyPending: false,
+      };
+
+      latestTranslateResult = nextResult;
+      await persistTranslateResult(nextResult);
+      await sendTranslateResult(tabId, nextResult, "updateSentenceStudy");
+    })();
   }
 
   return result;
@@ -567,7 +807,7 @@ chrome.commands.onCommand.addListener(async (command) => {
     }
     console.log(LOG_PREFIX, "text length:", text.length);
 
-    const result = await translateWithOllama(text, tab.id, {
+    const result = await translateWithProvider(text, tab.id, {
       showPending: true,
     });
     if (!result) {
@@ -581,38 +821,30 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 });
 
+const AUTO_MODE_MENU_MAP = {
+  [MENU_AUTO_MODE_OFF]: { key: "ollamaAutoTranslateMode", value: "off" },
+  [MENU_AUTO_MODE_SELECTION]: {
+    key: "ollamaAutoTranslateMode",
+    value: "selection",
+  },
+  [MENU_AUTO_MODE_HOVER]: { key: "ollamaAutoTranslateMode", value: "hover" },
+  [MENU_HOVER_SCOPE_WORD]: { key: "ollamaHoverTranslateScope", value: "word" },
+  [MENU_HOVER_SCOPE_PARAGRAPH]: {
+    key: "ollamaHoverTranslateScope",
+    value: "paragraph",
+  },
+};
+
 chrome.contextMenus.onClicked.addListener(async (info) => {
-  if (info.menuItemId === MENU_AUTO_MODE_OFF) {
-    await chrome.storage.sync.set({ ollamaAutoTranslateMode: "off" });
+  const menuConfig = AUTO_MODE_MENU_MAP[info.menuItemId];
+  if (menuConfig) {
+    await chrome.storage.sync.set({ [menuConfig.key]: menuConfig.value });
     void createContextMenus();
     return;
   }
 
-  if (info.menuItemId === MENU_AUTO_MODE_SELECTION) {
-    await chrome.storage.sync.set({ ollamaAutoTranslateMode: "selection" });
-    void createContextMenus();
+  if (info.menuItemId !== MENU_TRANSLATE_SELECTION || !info.selectionText)
     return;
-  }
-
-  if (info.menuItemId === MENU_AUTO_MODE_HOVER) {
-    await chrome.storage.sync.set({ ollamaAutoTranslateMode: "hover" });
-    void createContextMenus();
-    return;
-  }
-
-  if (info.menuItemId === MENU_HOVER_SCOPE_WORD) {
-    await chrome.storage.sync.set({ ollamaHoverTranslateScope: "word" });
-    void createContextMenus();
-    return;
-  }
-
-  if (info.menuItemId === MENU_HOVER_SCOPE_PARAGRAPH) {
-    await chrome.storage.sync.set({ ollamaHoverTranslateScope: "paragraph" });
-    void createContextMenus();
-    return;
-  }
-
-  if (info.menuItemId !== MENU_TRANSLATE_SELECTION || !info.selectionText) return;
   const text = info.selectionText.trim();
   const [tab] = await chrome.tabs.query({
     active: true,
@@ -620,7 +852,7 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
   });
   const tabId = tab?.id;
   try {
-    const result = await translateWithOllama(text, tabId, {
+    const result = await translateWithProvider(text, tabId, {
       showPending: true,
     });
     if (!result) {
@@ -673,7 +905,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const requestId = msg.requestId;
   const triggerSource = msg.triggerSource;
 
-  translateWithOllama(text, tabId, {
+  translateWithProvider(text, tabId, {
     showPending: !fromTip,
     requestId,
     triggerSource,

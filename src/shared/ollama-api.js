@@ -21,10 +21,7 @@ export async function generateCompletion(base, model, prompt) {
 
   if (!response.ok) {
     const text = await response.text();
-    if (response.status === 403) {
-      throw new Error(getOllamaErrorMessage("403"));
-    }
-    throw new Error(text || `HTTP ${response.status}`);
+    throwGenerateError(response, text);
   }
 
   const data = await response.json();
@@ -57,7 +54,12 @@ function parseStreamLine(line) {
  * @param {{ onChunk?: (chunk: { response: string, thinking: string }) => void }} [options]
  * @returns {Promise<{response: string, thinking: string}>}
  */
-export async function generateStreamingCompletion(base, model, prompt, options = {}) {
+export async function generateStreamingCompletion(
+  base,
+  model,
+  prompt,
+  options = {},
+) {
   const { onChunk } = options;
   const response = await fetch(`${base}/api/generate`, {
     method: "POST",
@@ -72,6 +74,9 @@ export async function generateStreamingCompletion(base, model, prompt, options =
 
   if (!response.body) {
     const data = await response.json();
+    if (typeof data.error === "string" && data.error.trim()) {
+      throw new Error(data.error.trim());
+    }
     const chunk = {
       response: data.response || "",
       thinking: data.thinking || "",
@@ -88,10 +93,18 @@ export async function generateStreamingCompletion(base, model, prompt, options =
   let buffer = "";
   let accumulatedResponse = "";
   let accumulatedThinking = "";
+  let streamError = "";
 
   function handleChunkLine(line) {
     const payload = parseStreamLine(line);
     if (!payload) return;
+
+    const payloadError =
+      typeof payload.error === "string" ? payload.error.trim() : "";
+    if (payloadError) {
+      streamError = payloadError;
+      return;
+    }
 
     let hasDelta = false;
 
@@ -124,12 +137,22 @@ export async function generateStreamingCompletion(base, model, prompt, options =
       const line = buffer.slice(0, newlineIndex);
       buffer = buffer.slice(newlineIndex + 1);
       handleChunkLine(line);
+      if (streamError) break;
+    }
+
+    if (streamError) break;
+  }
+
+  if (!streamError) {
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      handleChunkLine(buffer);
     }
   }
 
-  buffer += decoder.decode();
-  if (buffer.trim()) {
-    handleChunkLine(buffer);
+  if (streamError) {
+    await reader.cancel(streamError).catch(() => {});
+    throw new Error(streamError);
   }
 
   return {

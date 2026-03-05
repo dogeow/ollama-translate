@@ -7,3 +7,13 @@ export const SHORTCUT_HINT_ID = "ollama-translate-shortcut-hint";
 
 // TARGET_LANG_LABELS 已迁移至 shared/constants.js
 export { TARGET_LANG_LABELS } from "../shared/constants.js";
+
+/** 检查应用是否启用 */
+export async function isAppEnabled() {
+  try {
+    const value = await chrome.storage.sync.get("ollamaAppEnabled");
+    return value.ollamaAppEnabled !== false;
+  } catch {
+    return true;
+  }
+}

@@ -18,6 +18,18 @@ import {
 } from "./content/button.js";
 import { showTip, hideTip } from "./content/tip.js";
 import { showShortcutHint } from "./content/shortcutHint.js";
+import {
+  DEFAULT_TRANSLATE_TARGET_LANG,
+  DEFAULT_AUTO_TRANSLATE_MODE,
+  DEFAULT_HOVER_TRANSLATE_SCOPE,
+  DEFAULT_HOVER_TRANSLATE_DELAY_MS,
+  SELECTION_AUTO_TRANSLATE_DELAY_MS,
+} from "./shared/constants.js";
+import {
+  normalizeAutoTranslateMode,
+  normalizeHoverTranslateScope,
+  normalizeHoverTranslateDelayMs,
+} from "./shared/settings.js";
 
 const CONTENT_STATE_KEY = "__OLLAMA_TRANSLATE_CONTENT_STATE__";
 const LOG_PREFIX = "[Ollama 翻译-Content]";
@@ -41,11 +53,6 @@ function sendMessageSafe(msg, callback) {
 }
 
 function initContentScript() {
-  const SELECTION_AUTO_TRANSLATE_DELAY_MS = 220;
-  const DEFAULT_AUTO_TRANSLATE_MODE = "off";
-  const DEFAULT_HOVER_TRANSLATE_SCOPE = "word";
-  const DEFAULT_HOVER_TRANSLATE_DELAY_MS = 200;
-  const DEFAULT_TRANSLATE_TARGET_LANG = "Chinese";
   const HAN_CHAR_RE = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u;
   const SIGNIFICANT_CHAR_RE = /[\p{L}\p{N}]/u;
 
@@ -67,26 +74,6 @@ function initContentScript() {
   let lastCompletedHoverRequestId = "";
   let hoverRequestSeq = 0;
   let activeTipRequestId = "";
-
-  function normalizeAutoTranslateMode(mode, legacySelection = false) {
-    if (mode === "selection" || mode === "hover" || mode === "off") {
-      return mode;
-    }
-    return legacySelection ? "selection" : DEFAULT_AUTO_TRANSLATE_MODE;
-  }
-
-  function normalizeHoverTranslateScope(scope) {
-    return scope === "paragraph"
-      ? "paragraph"
-      : DEFAULT_HOVER_TRANSLATE_SCOPE;
-  }
-
-  function normalizeHoverTranslateDelayMs(value) {
-    if (value === "" || value == null) return DEFAULT_HOVER_TRANSLATE_DELAY_MS;
-    const n = Number(value);
-    if (!Number.isFinite(n)) return DEFAULT_HOVER_TRANSLATE_DELAY_MS;
-    return Math.min(5000, Math.max(0, Math.round(n)));
-  }
 
   function isMostlyChineseText(text) {
     const value = String(text || "").trim();
@@ -113,8 +100,7 @@ function initContentScript() {
   }
 
   function shouldSkipHoverTranslate(text) {
-    if (translateTargetLang !== "Chinese") return false;
-    return isMostlyChineseText(text);
+    return translateTargetLang === "Chinese" && isMostlyChineseText(text);
   }
 
   function applyAutoTranslateSettings(cfg) {
@@ -146,7 +132,7 @@ function initContentScript() {
     applyAutoTranslateSettings,
   );
 
-  chrome.storage.onChanged.addListener((changes, area) => {
+  function onStorageChanged(changes, area) {
     if (area !== "sync") return;
     if (
       !("ollamaAutoTranslateMode" in changes) &&
@@ -167,7 +153,8 @@ function initContentScript() {
       },
       applyAutoTranslateSettings,
     );
-  });
+  }
+  chrome.storage.onChanged.addListener(onStorageChanged);
 
   function clearSelectionAutoTranslateTimer() {
     if (selectionAutoTranslateTimerId !== null) {
@@ -229,7 +216,6 @@ function initContentScript() {
       activeTipRequestId = msg.requestId || "";
       showTip({ ...msg, pending: true }, lastTipRect);
     } else if (msg.action === "showTranslateResult") {
-      console.log(logDebug("收到 showTranslateResult 消息，错误状态:", msg.error));
       if (msg.triggerSource === "hover" && msg.requestId) {
         if (msg.requestId !== activeHoverRequestId) return;
         hoverLastResolvedKey = hoverCurrentKey || hoverLastResolvedKey;
@@ -238,12 +224,15 @@ function initContentScript() {
         lastCompletedHoverRequestId = msg.requestId;
       }
       activeTipRequestId = msg.requestId || activeTipRequestId;
-      console.log(logDebug("调用 showTip 显示翻译结果，错误:", msg.error));
       showTip(msg, lastTipRect);
     } else if (msg.action === "updateSentenceStudy") {
       const tip = document.getElementById(TIP_ID);
       if (!tip) return;
-      if (msg.requestId && activeTipRequestId && msg.requestId !== activeTipRequestId) {
+      if (
+        msg.requestId &&
+        activeTipRequestId &&
+        msg.requestId !== activeTipRequestId
+      ) {
         return;
       }
       if (msg.triggerSource === "hover" && msg.requestId) {
@@ -352,7 +341,11 @@ function initContentScript() {
       // 一些页面使用 user-select: none，双击/三击不会形成真实选区。
       if (!text) {
         const fallbackScope = clickCount >= 3 ? "paragraph" : "word";
-        const hoverTarget = getHoverTranslateTarget(clientX, clientY, fallbackScope);
+        const hoverTarget = getHoverTranslateTarget(
+          clientX,
+          clientY,
+          fallbackScope,
+        );
         if (!hoverTarget?.text?.trim()) return;
         text = hoverTarget.text.trim();
         anchorRect = hoverTarget.rect || anchorRect;
@@ -385,7 +378,11 @@ function initContentScript() {
     lastMouseY = e.clientY;
 
     if (autoTranslateMode !== "hover") return;
-    if (e.buttons !== 0 || getSelectionText() || isExtensionUiTarget(e.target)) {
+    if (
+      e.buttons !== 0 ||
+      getSelectionText() ||
+      isExtensionUiTarget(e.target)
+    ) {
       clearHoverAutoTranslateTimer({ preserveLastResolved: true });
       return;
     }
@@ -437,12 +434,16 @@ function initContentScript() {
 
     hoverPendingKey = key;
     const requestId = `hover:${Date.now()}:${++hoverRequestSeq}`;
-    logDebug(`悬停触发：text="${hoverText.substring(0, 20)}...", requestId=${requestId}`);
+    logDebug(
+      `悬停触发：text="${hoverText.substring(0, 20)}...", requestId=${requestId}`,
+    );
     hoverAutoTranslateTimerId = window.setTimeout(() => {
       hoverAutoTranslateTimerId = null;
       hoverPendingKey = "";
       if (autoTranslateMode !== "hover" || hoverCurrentKey !== key) {
-        logDebug(`悬停已取消：mode=${autoTranslateMode}, currentKey=${hoverCurrentKey}, key=${key}`);
+        logDebug(
+          `悬停已取消：mode=${autoTranslateMode}, currentKey=${hoverCurrentKey}, key=${key}`,
+        );
         return;
       }
 
@@ -466,10 +467,7 @@ function initContentScript() {
             activeHoverRequestId = "";
             hoverInFlightKey = "";
           }
-          logDebug(
-            "悬停翻译请求失败:",
-            chrome.runtime.lastError.message,
-          );
+          logDebug("悬停翻译请求失败:", chrome.runtime.lastError.message);
         }
       };
       sendMessageSafe(
@@ -502,8 +500,13 @@ function initContentScript() {
     hideButton();
     hideTip();
     chrome.runtime.onMessage.removeListener(onRuntimeMessage);
+    chrome.storage.onChanged.removeListener(onStorageChanged);
     document.removeEventListener("mouseup", onMouseUp, true);
-    document.removeEventListener("selectionchange", onSelectionChangedEvent, true);
+    document.removeEventListener(
+      "selectionchange",
+      onSelectionChangedEvent,
+      true,
+    );
     document.removeEventListener("scroll", onScroll, true);
     document.removeEventListener("mousemove", onMouseMove, true);
     if (btn._ollamaClickHandler) {

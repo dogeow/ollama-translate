@@ -1,7 +1,15 @@
 // 从共享模块重新导出，保持向后兼容
 export {
+  PROVIDER_OLLAMA,
+  PROVIDER_MINIMAX,
+  DEFAULT_TRANSLATE_PROVIDER,
+  TRANSLATE_PROVIDER_OPTIONS,
   DEFAULT_OLLAMA_URL,
   DEFAULT_OLLAMA_MODEL,
+  DEFAULT_MINIMAX_API_URL,
+  DEFAULT_MINIMAX_API_KEY,
+  DEFAULT_MINIMAX_MODEL,
+  MINIMAX_MODEL_OPTIONS,
   DEFAULT_TRANSLATE_TARGET_LANG,
   DEFAULT_AUTO_TRANSLATE_MODE,
   DEFAULT_HOVER_TRANSLATE_SCOPE,
@@ -12,6 +20,11 @@ export {
   LANG_OPTIONS,
   TARGET_LANG_LABELS,
 } from "../../shared/constants.js";
+
+// 扩展 origin 模式常量
+const EXTENSION_ORIGIN_CHROME = "chrome-extension://*";
+const EXTENSION_ORIGIN_ALL =
+  "chrome-extension://*,moz-extension://*,safari-web-extension://*";
 
 export const ORIGINS_PLATFORM_CONTENT = {
   macos: {

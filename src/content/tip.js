@@ -1,7 +1,7 @@
 /** 翻译结果小窗：React 挂载、定位、关闭与交互桥接 */
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { TIP_ID } from "./constants.js";
+import { TIP_ID, isAppEnabled } from "./constants.js";
 import { injectStyles } from "./styles.js";
 import { getSelectionRect, getElementRect } from "./selection.js";
 import { TipView } from "./tip/TipView.jsx";
@@ -54,6 +54,32 @@ function getAnchorRect(lastTipRect) {
     return rect;
   }
   return { bottom: 100, left: 50, top: 92, right: 50 };
+}
+
+function resolveTipWidthMode(result) {
+  const original = String(result?.original || "");
+  const translation = String(result?.translation || "");
+  const thinking = String(result?.thinking || "");
+  const samples = [original, translation, thinking]
+    .flatMap((text) => text.split(/\r?\n/))
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const longestLineLength = samples.reduce(
+    (maxLen, line) => Math.max(maxLen, line.length),
+    0,
+  );
+  const combinedLength = `${original}\n${translation}`.replace(/\s+/g, " ").trim()
+    .length;
+
+  if (longestLineLength >= 120 || combinedLength >= 220) return "wide";
+  if (longestLineLength >= 70 || combinedLength >= 120) return "medium";
+  return "compact";
+}
+
+function applyTipWidthMode(result) {
+  if (!tipElement) return;
+  tipElement.dataset.widthMode = resolveTipWidthMode(result);
 }
 
 function positionTip(anchorRect) {
@@ -131,6 +157,7 @@ export function showTip(result, lastTipRect) {
   injectStyles();
   const anchorRect = getAnchorRect(lastTipRect);
   ensureTipRoot();
+  applyTipWidthMode(result);
   bindDocumentListeners();
 
   const nextRenderToken = ++renderToken;
@@ -139,7 +166,8 @@ export function showTip(result, lastTipRect) {
     createElement(TipView, {
       result,
       onClose: hideTip,
-      onTranslateWithModel: (modelName) => handleTranslateWithModel(result, modelName),
+      onTranslateWithModel: (modelName) =>
+        handleTranslateWithModel(result, modelName),
     }),
   );
 
@@ -147,11 +175,4 @@ export function showTip(result, lastTipRect) {
     if (!tipElement || nextRenderToken !== renderToken) return;
     positionTip(anchorRect);
   });
-}
-
-/** 检查应用是否启用 */
-export function isAppEnabled() {
-  return chrome.storage.sync.get("ollamaAppEnabled").then((value) => {
-    return value.ollamaAppEnabled !== false;
-  }).catch(() => true);
 }

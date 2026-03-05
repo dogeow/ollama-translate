@@ -19,43 +19,6 @@ export const OLLAMA_ERROR_MESSAGES = {
 };
 
 /**
- * 获取 Ollama 错误消息
- * @param {string|Error} error - 错误代码或错误对象
- * @param {object} options - 选项
- * @param {boolean} options.detailed - 是否返回详细错误信息
- * @returns {string} 错误消息
- */
-export function getOllamaErrorMessage(error, options = {}) {
-  const { detailed = false } = options;
-  const errorCode = typeof error === "string" ? error : error?.message || "";
-
-  if (errorCode === "403" || isOllama403Error(error)) {
-    return detailed ? OLLAMA_ERROR_MESSAGES["403_detailed"] : OLLAMA_ERROR_MESSAGES["403"];
-  }
-
-  if (errorCode === "connection" || isOllamaConnectionError(error)) {
-    return detailed
-      ? OLLAMA_ERROR_MESSAGES["connection_detailed"]
-      : OLLAMA_ERROR_MESSAGES["connection"];
-  }
-
-  if (errorCode === "timeout") {
-    return OLLAMA_ERROR_MESSAGES["timeout"];
-  }
-
-  if (errorCode === "no_model") {
-    return OLLAMA_ERROR_MESSAGES["no_model"];
-  }
-
-  if (errorCode === "app_disabled") {
-    return OLLAMA_ERROR_MESSAGES["app_disabled"];
-  }
-
-  // 返回原始错误消息
-  return typeof error === "string" ? error : error?.message || "未知错误";
-}
-
-/**
  * 判断是否为 Ollama 连接错误
  * @param {Error|string} error - 错误对象或错误消息
  * @returns {boolean}
@@ -65,7 +28,9 @@ export function isOllamaConnectionError(error) {
   const message = typeof error === "string" ? error : error?.message || "";
   return (
     error?.name === "TypeError" &&
-    (message.includes("fetch") || message.includes("network") || message.includes("Failed to fetch"))
+    (message.includes("fetch") ||
+      message.includes("network") ||
+      message.includes("Failed to fetch"))
   );
 }
 
@@ -78,4 +43,38 @@ export function isOllama403Error(error) {
   if (!error) return false;
   const message = typeof error === "string" ? error : error?.message || "";
   return message === "403" || message.includes("403");
+}
+
+const ERROR_CODE_MAP = {
+  "403": { simple: "403", detailed: "403_detailed", check: isOllama403Error },
+  connection: {
+    simple: "connection",
+    detailed: "connection_detailed",
+    check: isOllamaConnectionError,
+  },
+  timeout: { simple: "timeout" },
+  no_model: { simple: "no_model" },
+  app_disabled: { simple: "app_disabled" },
+};
+
+/**
+ * 获取 Ollama 错误消息
+ * @param {string|Error} error - 错误代码或错误对象
+ * @param {object} options - 选项
+ * @param {boolean} options.detailed - 是否返回详细错误信息
+ * @returns {string} 错误消息
+ */
+export function getOllamaErrorMessage(error, options = {}) {
+  const { detailed = false } = options;
+  const errorCode = typeof error === "string" ? error : error?.message || "";
+
+  for (const [, config] of Object.entries(ERROR_CODE_MAP)) {
+    if (errorCode === config.simple || (config.check && config.check(error))) {
+      const key = detailed && config.detailed ? config.detailed : config.simple;
+      return OLLAMA_ERROR_MESSAGES[key];
+    }
+  }
+
+  // 返回原始错误消息
+  return typeof error === "string" ? error : error?.message || "未知错误";
 }

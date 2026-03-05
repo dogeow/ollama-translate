@@ -1,61 +1,44 @@
-export function storageSyncGet(defaults) {
-  return new Promise((resolve) => {
-    chrome.storage.sync.get(defaults, (value) => resolve(value));
-  });
-}
-
-export function storageSyncSet(value) {
-  return new Promise((resolve, reject) => {
-    chrome.storage.sync.set(value, () => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-        return;
-      }
-      resolve();
-    });
-  });
-}
-
-export function storageLocalGet(key) {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(key, (value) => resolve(value[key] || {}));
-  });
-}
-
-export function runtimeSendMessage(message) {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage(message, (value) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-        return;
-      }
-      resolve(value);
-    });
-  });
-}
-
-export function commandsGetAll() {
-  return new Promise((resolve) => {
-    if (!chrome.commands?.getAll) {
-      resolve([]);
-      return;
-    }
-    chrome.commands.getAll((commands) => resolve(commands || []));
-  });
-}
-
-export function tabsCreate(url) {
+function wrapChromeCallback(callback) {
   return new Promise((resolve, reject) => {
     try {
-      chrome.tabs.create({ url }, () => {
+      callback((result) => {
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message));
           return;
         }
-        resolve();
+        resolve(result);
       });
     } catch (error) {
       reject(error);
     }
   });
+}
+
+export function storageSyncGet(defaults) {
+  return wrapChromeCallback((cb) => chrome.storage.sync.get(defaults, cb));
+}
+
+export function storageSyncSet(value) {
+  return wrapChromeCallback((cb) => chrome.storage.sync.set(value, cb));
+}
+
+export function storageLocalGet(key) {
+  return wrapChromeCallback((cb) =>
+    chrome.storage.local.get(key, (v) => cb(v[key] || {})),
+  );
+}
+
+export function runtimeSendMessage(message) {
+  return wrapChromeCallback((cb) => chrome.runtime.sendMessage(message, cb));
+}
+
+export function commandsGetAll() {
+  if (!chrome.commands?.getAll) {
+    return Promise.resolve([]);
+  }
+  return wrapChromeCallback((cb) => chrome.commands.getAll(cb));
+}
+
+export function tabsCreate(url) {
+  return wrapChromeCallback((cb) => chrome.tabs.create({ url }, cb));
 }

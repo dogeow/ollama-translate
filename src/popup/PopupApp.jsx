@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { createDefaultUpdateState, UPDATE_STATE_KEY } from "../shared/update.js";
 import {
+  DEFAULT_TRANSLATE_PROVIDER,
+  TRANSLATE_PROVIDER_OPTIONS,
   DEFAULT_AUTO_TRANSLATE_MODE,
   DEFAULT_HOVER_TRANSLATE_SCOPE,
 } from "../options/lib/constants.js";
 import {
+  normalizeTranslateProvider,
   normalizeAutoTranslateMode,
   normalizeHoverTranslateScope,
 } from "../shared/settings.js";
@@ -43,6 +46,7 @@ const HOVER_SCOPE_OPTIONS = [
 export function PopupApp() {
   const currentVersion = chrome.runtime.getManifest().version;
   const [updateState, setUpdateState] = useState(createDefaultUpdateState(currentVersion));
+  const [provider, setProvider] = useState(DEFAULT_TRANSLATE_PROVIDER);
   const [autoTranslateMode, setAutoTranslateMode] = useState(DEFAULT_AUTO_TRANSLATE_MODE);
   const [hoverTranslateScope, setHoverTranslateScope] = useState(DEFAULT_HOVER_TRANSLATE_SCOPE);
   const [appEnabled, setAppEnabled] = useState(true);
@@ -58,12 +62,14 @@ export function PopupApp() {
 
     chrome.storage.sync.get(
       {
+        ollamaProvider: DEFAULT_TRANSLATE_PROVIDER,
         ollamaAutoTranslateMode: DEFAULT_AUTO_TRANSLATE_MODE,
         ollamaAutoTranslateSelection: false,
         ollamaHoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
         ollamaAppEnabled: true,
       },
       (value) => {
+        setProvider(normalizeTranslateProvider(value.ollamaProvider));
         setAutoTranslateMode(
           normalizeAutoTranslateMode(
             value.ollamaAutoTranslateMode,
@@ -84,6 +90,10 @@ export function PopupApp() {
 
       if ("ollamaAppEnabled" in changes) {
         setAppEnabled(changes.ollamaAppEnabled.newValue !== false);
+      }
+
+      if ("ollamaProvider" in changes) {
+        setProvider(normalizeTranslateProvider(changes.ollamaProvider.newValue));
       }
 
       if ("ollamaAutoTranslateMode" in changes || "ollamaAutoTranslateSelection" in changes) {
@@ -141,6 +151,12 @@ export function PopupApp() {
     updateSyncSettings({ ollamaAutoTranslateMode: mode });
   }
 
+  function handleProviderChange(nextProvider) {
+    const normalized = normalizeTranslateProvider(nextProvider);
+    setProvider(normalized);
+    updateSyncSettings({ ollamaProvider: normalized });
+  }
+
   function handleHoverScopeChange(scope) {
     setHoverTranslateScope(scope);
     updateSyncSettings({ ollamaHoverTranslateScope: scope });
@@ -194,13 +210,32 @@ export function PopupApp() {
           </button>
         </div>
       ) : null}
+      <section className="popup-panel popup-panel--subtle">
+        <div className="popup-panel__header">
+          <div>
+            <div className="popup-panel__title">API 厂家</div>
+            <div className="popup-panel__hint">翻译请求将发送到选中的厂家。</div>
+          </div>
+          {isSaving ? <div className="popup-status">已保存中</div> : null}
+        </div>
+        <select
+          className="popup-provider-select"
+          value={provider}
+          onChange={(event) => handleProviderChange(event.target.value)}
+        >
+          {TRANSLATE_PROVIDER_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </section>
       <section className="popup-panel">
         <div className="popup-panel__header">
           <div>
             <div className="popup-panel__title">自动翻译模式</div>
             <div className="popup-panel__hint">右键扩展图标也能快速切换。</div>
           </div>
-          {isSaving ? <div className="popup-status">已保存中</div> : null}
         </div>
         <div className="popup-choice-grid">
           {AUTO_MODE_OPTIONS.map((option) => (

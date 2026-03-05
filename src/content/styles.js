@@ -125,10 +125,12 @@ export function injectStyles() {
 
 /* ===== Tip container ===== */
 #${TIP_ID} {
+    --ollama-tip-max-height: min(80vh, 820px);
     position: fixed;
     z-index: 2147483647;
-    max-width: 420px;
+    max-width: min(420px, calc(100vw - 16px));
     min-width: 260px;
+    max-height: var(--ollama-tip-max-height);
     padding: 0;
     font-size: 13px;
     color: var(--ollama-text);
@@ -143,6 +145,41 @@ export function injectStyles() {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     line-height: 1.5;
+    display: flex;
+    flex-direction: column;
+}
+
+#${TIP_ID}[data-width-mode="medium"] {
+    max-width: min(560px, calc(100vw - 16px));
+    min-width: 300px;
+}
+
+#${TIP_ID}[data-width-mode="wide"] {
+    max-width: min(720px, calc(100vw - 16px));
+    min-width: 340px;
+}
+
+#${TIP_ID} .ollama-tip-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: calc(var(--ollama-tip-max-height) - 49px);
+    overflow-y: scroll;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--ollama-scrollbar) transparent;
+    -webkit-overflow-scrolling: touch;
+}
+
+#${TIP_ID} .ollama-tip-content::-webkit-scrollbar {
+    width: 8px;
+}
+#${TIP_ID} .ollama-tip-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+#${TIP_ID} .ollama-tip-content::-webkit-scrollbar-thumb {
+    background: var(--ollama-scrollbar);
+    border-radius: 999px;
 }
 
 @keyframes ollama-tip-enter {
@@ -160,6 +197,7 @@ export function injectStyles() {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 10px;
     padding: 11px 12px 11px 16px;
     background: var(--ollama-surface-alt);
     border-bottom: 1px solid var(--ollama-border);
@@ -167,10 +205,29 @@ export function injectStyles() {
 }
 
 #${TIP_ID} .ollama-tip-title {
+    flex: 1 1 auto;
+    min-width: 0;
     color: var(--ollama-text-secondary);
     font-size: 12px;
     font-weight: 500;
     letter-spacing: 0.02em;
+}
+
+#${TIP_ID} .ollama-tip-header-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+#${TIP_ID} .ollama-tip-header-model {
+    color: var(--ollama-text-disabled);
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    max-width: min(42vw, 280px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 #${TIP_ID} .ollama-tip-close {
@@ -192,15 +249,6 @@ export function injectStyles() {
 #${TIP_ID} .ollama-tip-close:hover {
     background: var(--ollama-border);
     color: var(--ollama-text);
-}
-
-/* ===== Model label ===== */
-#${TIP_ID} .ollama-tip-model {
-    color: var(--ollama-text-disabled);
-    font-size: 11px;
-    padding: 0 16px;
-    margin-top: 10px;
-    letter-spacing: 0.02em;
 }
 
 /* ===== Model select (need-model state) ===== */
@@ -261,7 +309,7 @@ export function injectStyles() {
 /* ===== Sections ===== */
 #${TIP_ID} .ollama-tip-section {
     margin-top: 12px;
-    padding: 0 16px;
+    padding: 0;
 }
 #${TIP_ID} .ollama-tip-section:first-child {
     margin-top: 0;
@@ -287,6 +335,18 @@ export function injectStyles() {
     color: var(--ollama-text-strong);
     font-size: 13px;
     line-height: 1.6;
+}
+
+#${TIP_ID} .ollama-tip-translation-inline {
+    color: var(--ollama-text-strong);
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+#${TIP_ID} .ollama-tip-translation-content {
+    white-space: inherit;
 }
 
 /* ===== Loading state ===== */
@@ -335,6 +395,63 @@ export function injectStyles() {
     line-height: 1.6;
     white-space: pre-wrap;
     word-break: break-word;
+    max-height: 160px;
+    overflow: auto;
+    scrollbar-width: thin;
+}
+
+#${TIP_ID} .ollama-tip-thinking-content--preview {
+    max-height: none;
+    overflow: hidden;
+}
+
+#${TIP_ID} .ollama-tip-thinking-details {
+    margin-top: 8px;
+    border: 1px solid var(--ollama-border-soft);
+    border-radius: 10px;
+    background: var(--ollama-panel);
+    overflow: hidden;
+}
+
+#${TIP_ID} .ollama-tip-thinking-summary {
+    position: relative;
+    list-style: none;
+    cursor: pointer;
+    padding: 10px 30px 10px 12px;
+}
+
+#${TIP_ID} .ollama-tip-thinking-summary::-webkit-details-marker {
+    display: none;
+}
+
+#${TIP_ID} .ollama-tip-thinking-summary::after {
+    content: "▾";
+    position: absolute;
+    right: 10px;
+    top: 10px;
+    color: var(--ollama-text-muted);
+    font-size: 11px;
+    line-height: 1;
+    transition: transform 0.15s ease;
+}
+
+#${TIP_ID} .ollama-tip-thinking-details[open] .ollama-tip-thinking-summary::after {
+    transform: rotate(180deg);
+}
+
+#${TIP_ID} .ollama-tip-thinking-summary-title {
+    display: block;
+    color: var(--ollama-text-muted);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+#${TIP_ID} .ollama-tip-thinking-details .ollama-tip-thinking-content {
+    margin-top: 0;
+    padding: 10px 12px 12px;
+    border-top: 1px solid var(--ollama-border-soft);
 }
 
 #${TIP_ID} .ollama-tip-placeholder {
@@ -362,25 +479,10 @@ export function injectStyles() {
 
 /* ===== Copy button ===== */
 #${TIP_ID} .ollama-tip-copy {
-    margin: 12px 0 0 16px;
-    padding: 6px 14px;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--ollama-copy-text);
-    background: var(--ollama-copy-bg);
-    border: 1px solid var(--ollama-copy-border);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    letter-spacing: 0.01em;
-}
-#${TIP_ID} .ollama-tip-copy:hover {
-    background: var(--ollama-copy-bg-hover);
-    border-color: var(--ollama-copy-bg);
-    color: var(--ollama-copy-text);
+    font-weight: 900;
+    color: var(--ollama-text-muted);
+    background: transparent;
+    border: none;
 }
 
 /* ===== Grammar / Sentence Study Section ===== */
@@ -417,6 +519,14 @@ export function injectStyles() {
 #${TIP_ID} .ollama-tip-grammar-parts::-webkit-scrollbar-thumb {
     background: var(--ollama-scrollbar);
     border-radius: 2px;
+}
+
+#${TIP_ID} .ollama-tip-grammar-thinking {
+    margin-top: 12px;
+}
+
+#${TIP_ID} .ollama-tip-grammar-thinking .ollama-tip-thinking-details {
+    margin-top: 0;
 }
 
 #${TIP_ID} .ollama-tip-grammar-part {

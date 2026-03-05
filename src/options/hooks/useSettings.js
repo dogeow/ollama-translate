@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTransientStatus } from "./useTransientStatus.js";
 import {
+  DEFAULT_TRANSLATE_PROVIDER,
   DEFAULT_OLLAMA_URL,
   DEFAULT_OLLAMA_MODEL,
+  DEFAULT_MINIMAX_API_URL,
+  DEFAULT_MINIMAX_API_KEY,
+  DEFAULT_MINIMAX_MODEL,
   DEFAULT_TRANSLATE_TARGET_LANG,
   DEFAULT_AUTO_TRANSLATE_MODE,
   DEFAULT_HOVER_TRANSLATE_SCOPE,
@@ -16,8 +20,12 @@ import {
 import { storageSyncGet, storageSyncSet } from "../lib/chrome.js";
 
 const INITIAL_SETTINGS = {
+  ollamaProvider: DEFAULT_TRANSLATE_PROVIDER,
   ollamaUrl: DEFAULT_OLLAMA_URL,
   ollamaModel: DEFAULT_OLLAMA_MODEL,
+  minimaxApiUrl: DEFAULT_MINIMAX_API_URL,
+  minimaxApiKey: DEFAULT_MINIMAX_API_KEY,
+  minimaxModel: DEFAULT_MINIMAX_MODEL,
   ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
   ollamaAutoTranslateMode: DEFAULT_AUTO_TRANSLATE_MODE,
   ollamaHoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
@@ -101,8 +109,12 @@ export function useSettings() {
    */
   async function loadSettings() {
     const storedSettings = await storageSyncGet({
+      ollamaProvider: DEFAULT_TRANSLATE_PROVIDER,
       ollamaUrl: DEFAULT_OLLAMA_URL,
       ollamaModel: DEFAULT_OLLAMA_MODEL,
+      minimaxApiUrl: DEFAULT_MINIMAX_API_URL,
+      minimaxApiKey: DEFAULT_MINIMAX_API_KEY,
+      minimaxModel: DEFAULT_MINIMAX_MODEL,
       ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
       ollamaAutoTranslateMode: DEFAULT_AUTO_TRANSLATE_MODE,
       ollamaAutoTranslateSelection: false,

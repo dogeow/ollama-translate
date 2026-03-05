@@ -1,3 +1,22 @@
+const UPDATE_STATUS_LABELS = {
+  idle: "等待版本检查",
+  checking: "正在检查新版本…",
+  available: (version) => `发现新版本 ${version}`,
+  "up-to-date": "当前已是最新版本",
+  error: (error) => error || "检查更新失败",
+};
+
+function getUpdateSummaryText(status, latestVersion, error, checkedAt) {
+  const config = UPDATE_STATUS_LABELS[status];
+  if (!config) {
+    return checkedAt ? "等待下一次检查" : "等待版本检查";
+  }
+  if (typeof config === "function") {
+    return status === "available" ? config(latestVersion) : config(error);
+  }
+  return config;
+}
+
 export function AboutTab({
   currentVersion,
   updateState,
@@ -11,18 +30,12 @@ export function AboutTab({
       }).format(updateState.checkedAt)
     : "";
 
-  let updateSummaryText = "等待版本检查";
-  if (updateState.status === "checking") {
-    updateSummaryText = "正在检查新版本…";
-  } else if (updateState.status === "available") {
-    updateSummaryText = `发现新版本 ${updateState.latestVersion}`;
-  } else if (updateState.status === "up-to-date") {
-    updateSummaryText = "当前已是最新版本";
-  } else if (updateState.status === "error") {
-    updateSummaryText = updateState.error || "检查更新失败";
-  } else if (updateState.checkedAt) {
-    updateSummaryText = "等待下一次检查";
-  }
+  const updateSummaryText = getUpdateSummaryText(
+    updateState.status,
+    updateState.latestVersion,
+    updateState.error,
+    updateState.checkedAt,
+  );
 
   return (
     <div className="card update-card">
@@ -43,7 +56,9 @@ export function AboutTab({
         {updateCheckedAtText ? (
           <div className="update-status-card__row">
             <span className="update-status-card__label">最近检查</span>
-            <span className="update-status-card__value">{updateCheckedAtText}</span>
+            <span className="update-status-card__value">
+              {updateCheckedAtText}
+            </span>
           </div>
         ) : null}
         {updateState.notes ? (
@@ -63,7 +78,9 @@ export function AboutTab({
           type="button"
           className="btn"
           onClick={openUpdatePage}
-          disabled={updateState.status !== "available" || !updateState.updateUrl}
+          disabled={
+            updateState.status !== "available" || !updateState.updateUrl
+          }
         >
           打开更新页面
         </button>

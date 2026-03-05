@@ -2,6 +2,13 @@
 
 const BLOCK_CONTAINER_SELECTOR =
   "article, aside, blockquote, dd, div, dl, dt, figcaption, footer, h1, h2, h3, h4, h5, h6, header, li, main, nav, p, pre, section, td, th";
+const BLOCK_DISPLAY_VALUES = new Set([
+  "block",
+  "list-item",
+  "table-cell",
+  "flex",
+  "grid",
+]);
 const nodeIds = new WeakMap();
 let nextNodeId = 1;
 
@@ -83,13 +90,7 @@ function getParagraphContainer(element) {
   while (current && current !== document.body) {
     if (current instanceof HTMLElement) {
       const display = window.getComputedStyle(current).display;
-      if (
-        display === "block" ||
-        display === "list-item" ||
-        display === "table-cell" ||
-        display === "flex" ||
-        display === "grid"
-      ) {
+      if (BLOCK_DISPLAY_VALUES.has(display)) {
         return current;
       }
     }
@@ -165,8 +166,7 @@ export function getHoverTranslateTarget(clientX, clientY, scope = "word") {
   if (!range) return null;
 
   const node = range.startContainer;
-  const element =
-    node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+  const element = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
   if (!element || isEditableElement(element)) return null;
 
   if (scope === "paragraph") {
@@ -232,11 +232,4 @@ export function getElementRect(el) {
     left: rect.left,
     right: rect.right,
   };
-}
-
-/** 检查应用是否启用 */
-export function isAppEnabled() {
-  return chrome.storage.sync.get("ollamaAppEnabled").then((value) => {
-    return value.ollamaAppEnabled !== false;
-  }).catch(() => true);
 }
