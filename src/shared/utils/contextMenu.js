@@ -54,9 +54,19 @@ export async function readMenuSettings() {
  * @returns {Promise<void>}
  */
 export async function createContextMenus() {
-  const { autoTranslateMode, hoverTranslateScope } = await readMenuSettings();
+  const { autoTranslateMode, hoverTranslateScope, appEnabled } =
+    await readMenuSettings();
 
   await chrome.contextMenus.removeAll();
+
+  if (!appEnabled) {
+    chrome.contextMenus.create({
+      id: MENU_OPEN_OPTIONS,
+      title: "打开设置",
+      contexts: ["action"],
+    });
+    return;
+  }
 
   chrome.contextMenus.create({
     id: MENU_TRANSLATE_SELECTION,

@@ -63,7 +63,7 @@ export function ShortcutsTab({
                   "now",
                 )
               }
-              options={HOVER_SCOPE_OPTIONS}
+              options={HOVER_TRANSLATE_SCOPE_OPTIONS}
             />
             <span className="hint">
               悬停模式下，决定自动发送给 Ollama 的文本范围。

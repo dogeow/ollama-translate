@@ -65,6 +65,10 @@ export function PopupApp() {
       <header className="popup-hero">
         <div className="popup-hero__title-group">
           <h1>Ollama 翻译</h1>
+          <AppToggle
+            enabled={popupSettings.appEnabled}
+            onToggle={popupSettings.toggleAppEnabled}
+          />
         </div>
         <button
           type="button"
@@ -74,21 +78,15 @@ export function PopupApp() {
           设置
         </button>
       </header>
-      <div className="popup-toolbar">
-        <AppToggle
-          enabled={popupSettings.appEnabled}
-          onToggle={popupSettings.toggleAppEnabled}
-        />
-        <div
-          className={`popup-toolbar__state${popupSettings.isSaving ? " is-saving" : ""}`}
-          aria-live="polite"
-        >
-          {popupSettings.isSaving
-            ? "同步中..."
-            : popupSettings.appEnabled
-              ? "服务已启用"
-              : "服务已停用"}
-        </div>
+      <div
+        className={`popup-toolbar__state${popupSettings.isSaving ? " is-saving" : ""}`}
+        aria-live="polite"
+      >
+        {popupSettings.isSaving
+          ? "同步中..."
+          : popupSettings.appEnabled
+            ? "服务已启用"
+            : "服务已停用"}
       </div>
       {updateState.status === "available" && (
         <UpdateBanner

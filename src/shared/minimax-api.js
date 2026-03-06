@@ -7,56 +7,29 @@ import {
   logAiRequestError,
   logAiRequestSuccess,
 } from "./ai-request-log.js";
+import {
+  buildHttpErrorMessage,
+  flattenTextContent,
+  normalizeApiBaseUrl,
+} from "./utils/apiUtils.js";
 
 export function normalizeMiniMaxBaseUrl(base) {
-  const raw = String(base || "").trim();
-  if (!raw) return DEFAULT_MINIMAX_API_URL;
-  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-  return withProtocol.replace(/\/$/, "");
+  return normalizeApiBaseUrl(base, DEFAULT_MINIMAX_API_URL);
 }
 
 function buildMiniMaxErrorMessage(status, responseText) {
-  const fallback = `MiniMax 请求失败（HTTP ${status}）`;
-  if (!responseText) return fallback;
-
-  try {
-    const payload = JSON.parse(responseText);
-    const message =
-      payload?.error?.message ||
-      payload?.error?.msg ||
-      payload?.message ||
-      payload?.msg;
-    if (!message) return fallback;
-    return `${fallback}：${String(message).trim()}`;
-  } catch (_) {
-    const brief = String(responseText).trim().slice(0, 200);
-    return brief ? `${fallback}：${brief}` : fallback;
-  }
-}
-
-function flattenMessageContent(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-
-  return content
-    .map((item) => {
-      if (!item || typeof item !== "object") return "";
-      if (typeof item.text === "string") return item.text;
-      if (typeof item.output_text === "string") return item.output_text;
-      return "";
-    })
-    .filter(Boolean)
-    .join("");
+  return buildHttpErrorMessage(status, "MiniMax", responseText);
 }
 
 function flattenMaybeText(value) {
-  if (typeof value === "string") return value;
-  if (Array.isArray(value)) return flattenMessageContent(value);
-  if (!value || typeof value !== "object") return "";
-  if (typeof value.text === "string") return value.text;
-  if (typeof value.output_text === "string") return value.output_text;
-  if (Array.isArray(value.content)) return flattenMessageContent(value.content);
-  return "";
+  return flattenTextContent(value, [
+    "text",
+    "output_text",
+    "content",
+    "reasoning_content",
+    "reasoning",
+    "thinking",
+  ]);
 }
 
 function extractChoiceResponseText(choice) {

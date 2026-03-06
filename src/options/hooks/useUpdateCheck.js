@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { createDefaultUpdateState, UPDATE_STATE_KEY } from "../../shared/update.js";
-import { runtimeSendMessage, storageLocalGet, tabsCreate } from "../lib/chrome.js";
+import {
+  runtimeSendMessage,
+  storageLocalGet,
+  storageOnChanged,
+  tabsCreate,
+} from "../lib/chrome.js";
 
 /**
  * 管理扩展更新检查状态的 hook
@@ -26,10 +31,7 @@ export function useUpdateCheck() {
       });
     }
 
-    chrome.storage.onChanged.addListener(handleStorageChanged);
-    return () => {
-      chrome.storage.onChanged.removeListener(handleStorageChanged);
-    };
+    return storageOnChanged(handleStorageChanged);
   }, [currentVersion]);
 
   async function runExtensionUpdateCheck() {

@@ -24,7 +24,10 @@ export function storageSyncSet(value) {
 
 export function storageLocalGet(key) {
   return wrapChromeCallback((cb) =>
-    chrome.storage.local.get(key, (v) => cb(v[key] || {})),
+    chrome.storage.local.get(key, (v) => {
+      const value = v?.[key];
+      cb(value === undefined ? {} : value);
+    }),
   );
 }
 
@@ -43,6 +46,14 @@ export function storageLocalSet(value) {
 
 export function storageLocalRemove(key) {
   return wrapChromeCallback((cb) => chrome.storage.local.remove(key, cb));
+}
+
+export function storageOnChanged(listener) {
+  if (!chrome.storage?.onChanged) {
+    return () => {};
+  }
+  chrome.storage.onChanged.addListener(listener);
+  return () => chrome.storage.onChanged.removeListener(listener);
 }
 
 export function runtimeSendMessage(message) {

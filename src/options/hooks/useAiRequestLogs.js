@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AI_REQUEST_LOG_STORAGE_KEY } from "../../shared/constants.js";
-import { storageLocalGetValue, storageLocalRemove } from "../lib/chrome.js";
+import {
+  storageLocalGetValue,
+  storageLocalRemove,
+  storageOnChanged,
+} from "../lib/chrome.js";
 
 const COPY_STATUS_RESET_MS = 1800;
 const THINK_BLOCK_RE = /<think\b[^>]*>([\s\S]*?)<\/think>/gi;
@@ -239,17 +243,13 @@ export function useAiRequestLogs() {
   }, [refreshLogs]);
 
   useEffect(() => {
-    if (!chrome.storage?.onChanged) return () => {};
     const listener = (changes, areaName) => {
       if (areaName !== "local") return;
       if (!(AI_REQUEST_LOG_STORAGE_KEY in changes)) return;
       applyLogs(changes[AI_REQUEST_LOG_STORAGE_KEY]?.newValue || []);
       setLoading(false);
     };
-    chrome.storage.onChanged.addListener(listener);
-    return () => {
-      chrome.storage.onChanged.removeListener(listener);
-    };
+    return storageOnChanged(listener);
   }, [applyLogs]);
 
   useEffect(() => {

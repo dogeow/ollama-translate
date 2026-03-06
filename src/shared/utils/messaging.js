@@ -8,16 +8,19 @@ import { TRANSLATE_RESULT_KEY } from "../constants.js";
  * Send translate pending message to content script
  * @param {number} tabId - Tab ID
  * @param {object} payload - Pending translation payload
- * @returns {Promise<void>}
+ * @returns {Promise<boolean>}
  */
 export async function sendTranslatePending(tabId, payload) {
-  if (!tabId) return;
-  await chrome.tabs
-    .sendMessage(tabId, {
+  if (!tabId) return false;
+  try {
+    await chrome.tabs.sendMessage(tabId, {
       action: "showTranslatePending",
       ...payload,
-    })
-    .catch(() => {});
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -56,20 +59,23 @@ export function buildPendingTranslatePayload({
  * @param {number} tabId - Tab ID
  * @param {object} payload - Translation result payload
  * @param {string} action - Action name (default: "showTranslateResult")
- * @returns {Promise<void>}
+ * @returns {Promise<boolean>}
  */
 export async function sendTranslateResult(
   tabId,
   payload,
   action = "showTranslateResult",
 ) {
-  if (!tabId) return;
-  await chrome.tabs
-    .sendMessage(tabId, {
+  if (!tabId) return false;
+  try {
+    await chrome.tabs.sendMessage(tabId, {
       action,
       ...payload,
-    })
-    .catch(() => {});
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

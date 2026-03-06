@@ -456,6 +456,11 @@ export function createVisualPageTranslator({
     active = false;
     clearScanTimer();
     disconnectMutationObserver();
+    for (const task of queue) {
+      if (!task?.node) continue;
+      setNodePendingState(task.node, false);
+      pendingNodes.delete(task.node);
+    }
     queue.length = 0;
     for (const element of pendingParentCount.keys()) {
       element.classList.remove(PAGE_TRANSLATE_PENDING_CLASS);

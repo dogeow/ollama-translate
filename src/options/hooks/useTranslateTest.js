@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   DEFAULT_TRANSLATE_TARGET_LANG,
   PROVIDER_MINIMAX,
@@ -58,6 +58,8 @@ export function useTranslateTest({
   setConnectionStatus,
   setOriginsModalOpen,
 }) {
+  const detectRequestIdRef = useRef(0);
+  const translateRequestIdRef = useRef(0);
   const [testInput, setTestInput] = useState("");
   const [testSourceLang, setTestSourceLang] = useState("auto");
   const [testTargetLang, setTestTargetLang] = useState(
@@ -114,6 +116,7 @@ export function useTranslateTest({
   }
 
   async function runDetectLanguage() {
+    const requestId = ++detectRequestIdRef.current;
     const text = testInput.trim();
     if (!text) {
       setDetectLangResult({ text: "请先输入要识别的文本", isError: true });
@@ -136,11 +139,13 @@ export function useTranslateTest({
       const language = normalizeDetectedLanguage(
         await runGenerateRequest(config, prompt),
       );
+      if (requestId !== detectRequestIdRef.current) return;
       setDetectLangResult({
         text: language ? `识别为：${language}` : "未能识别",
         isError: false,
       });
     } catch (error) {
+      if (requestId !== detectRequestIdRef.current) return;
       if (handleProviderError(config, error)) {
         setDetectLangResult({ text: "", isError: false });
         return;
@@ -156,6 +161,7 @@ export function useTranslateTest({
   }
 
   async function runTranslateTest() {
+    const requestId = ++translateRequestIdRef.current;
     const text = testInput.trim();
     if (!text) {
       setTestTranslateHint({ text: "请先输入要翻译的文本", isError: true });
@@ -182,11 +188,13 @@ export function useTranslateTest({
       const translation = normalizeTranslationText(
         await runGenerateRequest(config, prompt),
       );
+      if (requestId !== translateRequestIdRef.current) return;
       setTestTranslateResult({
         text: translation || "（模型未返回内容）",
         tone: "normal",
       });
     } catch (error) {
+      if (requestId !== translateRequestIdRef.current) return;
       if (handleProviderError(config, error)) {
         setTestTranslateResult({ text: "", tone: "empty" });
         return;

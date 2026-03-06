@@ -11,6 +11,7 @@ import {
   UPDATE_MANIFEST_URL,
   UPDATE_STATE_KEY,
 } from "../update.js";
+import { safeJsonParse } from "./apiUtils.js";
 
 // Re-export for use in background.js
 export { UPDATE_CHECK_ALARM_NAME };
@@ -107,6 +108,9 @@ export async function checkForExtensionUpdate(options = {}) {
   const { markChecking = false } = options;
   const currentVersion = chrome.runtime.getManifest().version;
   const manifestUrl = UPDATE_MANIFEST_URL;
+  const manifestRequestUrl = manifestUrl
+    ? `${manifestUrl}${manifestUrl.includes("?") ? "&" : "?"}t=${Date.now()}`
+    : "";
 
   if (!manifestUrl) {
     return persistUpdateState({
@@ -133,7 +137,7 @@ export async function checkForExtensionUpdate(options = {}) {
   }
 
   try {
-    const response = await fetch(manifestUrl, {
+    const response = await fetch(manifestRequestUrl, {
       method: "GET",
       cache: "no-store",
       headers: { Accept: "application/json" },
@@ -143,7 +147,7 @@ export async function checkForExtensionUpdate(options = {}) {
       throw new Error(`HTTP ${response.status}`);
     }
 
-    const payload = readUpdateFeed(await response.json());
+    const payload = readUpdateFeed(await safeJsonParse(response));
     const comparison = compareExtensionVersions(
       payload.version,
       currentVersion,

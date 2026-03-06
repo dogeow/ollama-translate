@@ -76,6 +76,17 @@ import {
 
 const LOG_PREFIX = "[Ollama 翻译]";
 const MIN_THINK_PREVIEW_MS = 320;
+const latestTranslateRequestIdsByTab = new Map();
+
+function registerLatestTranslateRequest(tabId, requestId) {
+  if (!tabId || !requestId) return;
+  latestTranslateRequestIdsByTab.set(tabId, requestId);
+}
+
+function isLatestTranslateRequest(tabId, requestId) {
+  if (!tabId || !requestId) return true;
+  return latestTranslateRequestIdsByTab.get(tabId) === requestId;
+}
 
 async function runProviderCompletion({
   provider,
@@ -219,6 +230,7 @@ async function translateWithProvider(text, tabId = null, options = {}) {
     learningModeOverride = null,
   } = options;
   const resolvedRequestId = createTranslateRequestId(requestId);
+  registerLatestTranslateRequest(tabId, resolvedRequestId);
   const provider = normalizeTranslateProvider(settings.ollamaProvider);
   const selectedModel =
     provider === PROVIDER_MINIMAX
@@ -476,7 +488,9 @@ async function translateWithProvider(text, tabId = null, options = {}) {
   hasFinalTranslateResult = true;
   latestTranslateResult = result;
 
-  if (persistResult) {
+  const shouldCommitResult = isLatestTranslateRequest(tabId, resolvedRequestId);
+
+  if (persistResult && shouldCommitResult) {
     await persistTranslateResult(result);
   }
 
@@ -514,6 +528,10 @@ async function translateWithProvider(text, tabId = null, options = {}) {
           null,
         sentenceStudyPending: false,
       };
+
+      if (!isLatestTranslateRequest(tabId, resolvedRequestId)) {
+        return;
+      }
 
       latestTranslateResult = nextResult;
       if (persistResult) {
@@ -603,7 +621,11 @@ chrome.commands.onCommand.addListener(async (command) => {
       // 应用已禁用，静默返回
       return;
     }
-    await sendTranslateResult(tab.id, result);
+    const sent = await sendTranslateResult(tab.id, result);
+    if (!sent) {
+      openResultWindow();
+      return;
+    }
     console.log(LOG_PREFIX, "showTranslateResult sent");
   } catch (e) {
     console.error(LOG_PREFIX, "Hotkey translate error:", e);
@@ -670,10 +692,10 @@ chrome.contextMenus.onClicked.addListener(async (info, clickedTab) => {
       return;
     }
     if (tabId) {
-      try {
-        await sendTranslateResult(tabId, result);
+      const sent = await sendTranslateResult(tabId, result);
+      if (sent) {
         return;
-      } catch (_) {}
+      }
     }
     openResultWindow();
   } catch (_) {}
@@ -780,7 +802,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           ...result,
           fromTip,
         }).then(
-          () => sendResponse(responsePayload),
+          (sent) => {
+            if (!sent) {
+              openResultWindow();
+            }
+            sendResponse(responsePayload);
+          },
           () => sendResponse(responsePayload),
         );
       } else {

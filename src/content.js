@@ -21,7 +21,7 @@ import {
   getButtonElement,
   getButtonOrSelectionText,
 } from "./content/button.js";
-import { showTip, hideTip } from "./content/tip.js";
+import { showTip, hideTip, setTipHideHandler } from "./content/tip.js";
 import { showShortcutHint } from "./content/shortcutHint.js";
 import { createVisualPageTranslator } from "./content/pageTranslate.js";
 import {
@@ -86,6 +86,7 @@ function initContentScript() {
   let lastCompletedHoverRequestId = "";
   let hoverRequestSeq = 0;
   let activeTipRequestId = "";
+  let dismissedTipRequestId = "";
   let pageTranslateConcurrency = DEFAULT_PAGE_TRANSLATE_CONCURRENCY;
   let pageTranslateBatchSize = DEFAULT_PAGE_TRANSLATE_BATCH_SIZE;
   let pageTranslator = null;
@@ -214,6 +215,18 @@ function initContentScript() {
     }
   }
 
+  function resetHoverResolvedKeyIfLeaving(nextKey = "") {
+    if (!hoverLastResolvedKey) return;
+    if (!hoverCurrentKey) {
+      hoverLastResolvedKey = "";
+      return;
+    }
+    if (nextKey && nextKey === hoverLastResolvedKey) return;
+    if (hoverCurrentKey === hoverLastResolvedKey) {
+      hoverLastResolvedKey = "";
+    }
+  }
+
   function isExtensionUiTarget(target) {
     return !!(
       target &&
@@ -300,6 +313,11 @@ function initContentScript() {
     },
   });
 
+  setTipHideHandler(() => {
+    dismissedTipRequestId = activeTipRequestId || dismissedTipRequestId;
+    activeTipRequestId = "";
+  });
+
   function onButtonClick(e) {
     e.preventDefault();
     e.stopPropagation();
@@ -324,9 +342,20 @@ function initContentScript() {
   btn.addEventListener("click", onButtonClick);
 
   function onRuntimeMessage(msg, _sender, sendResponse) {
+    if (
+      msg.requestId &&
+      dismissedTipRequestId &&
+      msg.requestId === dismissedTipRequestId
+    ) {
+      return;
+    }
+
     if (msg.action === "showTranslatePending") {
       if (msg.triggerSource === "hover" && msg.requestId) {
         if (msg.requestId !== activeHoverRequestId) return;
+      }
+      if (msg.requestId && msg.requestId !== dismissedTipRequestId) {
+        dismissedTipRequestId = "";
       }
       activeTipRequestId = msg.requestId || "";
       showTip({ ...msg, pending: true }, lastTipRect);
@@ -337,6 +366,9 @@ function initContentScript() {
         hoverInFlightKey = "";
         activeHoverRequestId = "";
         lastCompletedHoverRequestId = msg.requestId;
+      }
+      if (msg.requestId && msg.requestId !== dismissedTipRequestId) {
+        dismissedTipRequestId = "";
       }
       activeTipRequestId = msg.requestId || activeTipRequestId;
       showTip(msg, lastTipRect);
@@ -352,6 +384,9 @@ function initContentScript() {
       }
       if (msg.triggerSource === "hover" && msg.requestId) {
         if (msg.requestId !== lastCompletedHoverRequestId) return;
+      }
+      if (msg.requestId && msg.requestId !== dismissedTipRequestId) {
+        dismissedTipRequestId = "";
       }
       activeTipRequestId = msg.requestId || activeTipRequestId;
       showTip(msg, lastTipRect);
@@ -507,6 +542,7 @@ function initContentScript() {
       getSelectionText() ||
       isExtensionUiTarget(e.target)
     ) {
+      resetHoverResolvedKeyIfLeaving("");
       clearHoverAutoTranslateTimer({ preserveLastResolved: true });
       return;
     }
@@ -519,6 +555,7 @@ function initContentScript() {
     const key = hoverTarget?.key || "";
     const hoverText = (hoverTarget?.text || "").trim();
     if (!key || !hoverText) {
+      resetHoverResolvedKeyIfLeaving("");
       clearHoverAutoTranslateTimer({ preserveLastResolved: true });
       return;
     }
@@ -529,6 +566,7 @@ function initContentScript() {
         hoverAutoTranslateTimerId = null;
       }
       if (key !== hoverCurrentKey) {
+        resetHoverResolvedKeyIfLeaving(key);
         hoverCurrentKey = key;
       }
       hoverPendingKey = "";
@@ -538,6 +576,7 @@ function initContentScript() {
     }
 
     if (key !== hoverCurrentKey) {
+      resetHoverResolvedKeyIfLeaving(key);
       if (hoverAutoTranslateTimerId !== null) {
         clearTimeout(hoverAutoTranslateTimerId);
         hoverAutoTranslateTimerId = null;
@@ -623,6 +662,7 @@ function initContentScript() {
     clearSelectionAutoTranslateTimer();
     clearHoverAutoTranslateTimer();
     pageTranslator.stop();
+    setTipHideHandler(null);
     hideButton();
     hideTip();
     chrome.runtime.onMessage.removeListener(onRuntimeMessage);

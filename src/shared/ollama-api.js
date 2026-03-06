@@ -3,12 +3,33 @@
  * 提供 generate、tags 等 API 的统一封装
  */
 
+import { DEFAULT_OLLAMA_URL } from "./constants.js";
 import { getOllamaErrorMessage } from "./ollama-errors.js";
 import {
   createAiRequestLog,
   logAiRequestError,
   logAiRequestSuccess,
 } from "./ai-request-log.js";
+import {
+  buildHttpErrorMessage,
+  buildJsonRequestOptions,
+  normalizeApiBaseUrl,
+  safeJsonParse,
+} from "./utils/apiUtils.js";
+
+function normalizeOllamaBaseUrl(base) {
+  return normalizeApiBaseUrl(base, DEFAULT_OLLAMA_URL);
+}
+
+async function requestOllamaGenerate(base, requestBody) {
+  const normalizedBase = normalizeOllamaBaseUrl(base);
+  const endpoint = `${normalizedBase}/api/generate`;
+  const response = await fetch(
+    endpoint,
+    buildJsonRequestOptions("POST", requestBody),
+  );
+  return { endpoint, response };
+}
 
 /**
  * 调用 Ollama generate API（非流式）
@@ -18,8 +39,9 @@ import {
  * @returns {Promise<string>} 生成的文本
  */
 export async function generateCompletion(base, model, prompt) {
-  const endpoint = `${base}/api/generate`;
   const requestBody = { model, prompt, stream: false };
+  const normalizedBase = normalizeOllamaBaseUrl(base);
+  const endpoint = `${normalizedBase}/api/generate`;
   const trace = createAiRequestLog({
     provider: "ollama",
     endpoint,
@@ -33,11 +55,7 @@ export async function generateCompletion(base, model, prompt) {
   let hasLogged = false;
 
   try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestBody),
-    });
+    const { response } = await requestOllamaGenerate(normalizedBase, requestBody);
     status = response.status;
 
     if (!response.ok) {
@@ -51,7 +69,7 @@ export async function generateCompletion(base, model, prompt) {
       throw error;
     }
 
-    const data = await response.json();
+    const data = (await safeJsonParse(response)) || {};
     const output = (data.response || "").trim();
     logAiRequestSuccess(trace, {
       status,
@@ -74,7 +92,7 @@ function createGenerateError(response, text) {
   if (response.status === 403) {
     return new Error(getOllamaErrorMessage("403"));
   }
-  return new Error(text || `HTTP ${response.status}`);
+  return new Error(buildHttpErrorMessage(response.status, "Ollama", text));
 }
 
 function parseStreamLine(line) {
@@ -103,8 +121,9 @@ export async function generateStreamingCompletion(
   options = {},
 ) {
   const { onChunk } = options;
-  const endpoint = `${base}/api/generate`;
   const requestBody = { model, prompt, stream: true };
+  const normalizedBase = normalizeOllamaBaseUrl(base);
+  const endpoint = `${normalizedBase}/api/generate`;
   const trace = createAiRequestLog({
     provider: "ollama",
     endpoint,
@@ -118,11 +137,7 @@ export async function generateStreamingCompletion(
   let chunkCount = 0;
 
   try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestBody),
-    });
+    const { response } = await requestOllamaGenerate(normalizedBase, requestBody);
     status = response.status;
 
     if (!response.ok) {
@@ -140,7 +155,7 @@ export async function generateStreamingCompletion(
     }
 
     if (!response.body) {
-      const data = await response.json();
+      const data = (await safeJsonParse(response)) || {};
       if (typeof data.error === "string" && data.error.trim()) {
         throw new Error(data.error.trim());
       }
@@ -267,7 +282,7 @@ export async function generateStreamingCompletion(
  * @returns {Promise<{models?: Array, error?: string}>}
  */
 export async function fetchModels(base) {
-  const tagsUrl = `${base}/api/tags`;
+  const tagsUrl = `${normalizeOllamaBaseUrl(base)}/api/tags`;
 
   try {
     const response = await fetch(tagsUrl);
@@ -277,7 +292,7 @@ export async function fetchModels(base) {
     if (!response.ok) {
       return { error: "connection" };
     }
-    const data = await response.json();
+    const data = (await safeJsonParse(response)) || {};
     return { models: data.models || [] };
   } catch (_) {
     return { error: "connection" };
@@ -290,6 +305,5 @@ export async function fetchModels(base) {
  * @returns {Promise<{models?: Array, error?: string}>}
  */
 export async function checkOllamaAndGetModels(ollamaUrl) {
-  const base = ollamaUrl.replace(/\/$/, "");
-  return fetchModels(base);
+  return fetchModels(normalizeOllamaBaseUrl(ollamaUrl));
 }

@@ -10,7 +10,7 @@
 export function normalizeApiBaseUrl(url, defaultUrl = "") {
   const raw = String(url || "").trim();
   if (!raw) return defaultUrl;
-  
+
   const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
   return withProtocol.replace(/\/$/, "");
 }
@@ -33,11 +33,13 @@ export function buildJsonRequestOptions(method, body, headers = {}) {
  * 安全解析 JSON 响应
  */
 export async function safeJsonParse(response) {
+  const responseText = await response.text();
+  if (!responseText) return null;
+
   try {
-    return await response.json();
-  } catch (error) {
-    const text = await response.text();
-    throw new Error(`Invalid JSON response: ${text.slice(0, 100)}`);
+    return JSON.parse(responseText);
+  } catch {
+    throw new Error(`Invalid JSON response: ${responseText.slice(0, 100)}`);
   }
 }
 
@@ -47,7 +49,7 @@ export async function safeJsonParse(response) {
 export function extractErrorMessage(data, fallback = "请求失败") {
   if (typeof data === "string") return data;
   if (!data || typeof data !== "object") return fallback;
-  
+
   // 尝试常见的错误字段
   const message =
     data.error?.message ||
@@ -57,7 +59,7 @@ export function extractErrorMessage(data, fallback = "请求失败") {
     data.msg ||
     data.detail ||
     data.error_description;
-  
+
   return String(message || fallback).trim();
 }
 
@@ -66,9 +68,9 @@ export function extractErrorMessage(data, fallback = "请求失败") {
  */
 export function buildHttpErrorMessage(status, provider, responseText = "") {
   const fallback = `${provider} 请求失败（HTTP ${status}）`;
-  
+
   if (!responseText) return fallback;
-  
+
   try {
     const data = JSON.parse(responseText);
     const message = extractErrorMessage(data);
@@ -85,14 +87,14 @@ export function buildHttpErrorMessage(status, provider, responseText = "") {
 export function flattenTextContent(value, textFields = ["text", "content", "output_text"]) {
   if (typeof value === "string") return value;
   if (!value) return "";
-  
+
   if (Array.isArray(value)) {
     return value
       .map((item) => flattenTextContent(item, textFields))
       .filter(Boolean)
       .join("");
   }
-  
+
   if (typeof value === "object") {
     for (const field of textFields) {
       if (typeof value[field] === "string") return value[field];
@@ -110,11 +112,11 @@ export function flattenTextContent(value, textFields = ["text", "content", "outp
  */
 export function extractTextFromPaths(obj, paths) {
   if (!obj || typeof obj !== "object") return "";
-  
+
   for (const path of paths) {
     const keys = path.split(".");
     let current = obj;
-    
+
     for (const key of keys) {
       if (current && typeof current === "object" && key in current) {
         current = current[key];
@@ -123,7 +125,7 @@ export function extractTextFromPaths(obj, paths) {
         break;
       }
     }
-    
+
     if (current) {
       const text = flattenTextContent(current);
       if (text) return text;
@@ -137,6 +139,9 @@ export function extractTextFromPaths(obj, paths) {
  * 创建超时 Promise
  */
 export function createTimeoutPromise(ms, errorMessage = "请求超时") {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return Promise.resolve();
+  }
   return new Promise((_, reject) => {
     setTimeout(() => reject(new Error(errorMessage)), ms);
   });
@@ -146,10 +151,46 @@ export function createTimeoutPromise(ms, errorMessage = "请求超时") {
  * 带超时的 fetch 请求
  */
 export async function fetchWithTimeout(url, options, timeoutMs = 30000) {
-  const fetchPromise = fetch(url, options);
-  const timeoutPromise = createTimeoutPromise(timeoutMs);
-  
-  return Promise.race([fetchPromise, timeoutPromise]);
+  const controller = new AbortController();
+  const externalSignal = options?.signal;
+  let abortReason = "";
+  let removeAbortListener = null;
+
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort(externalSignal.reason);
+    } else {
+      const handleAbort = () => controller.abort(externalSignal.reason);
+      externalSignal.addEventListener("abort", handleAbort, { once: true });
+      removeAbortListener = () =>
+        externalSignal.removeEventListener("abort", handleAbort);
+    }
+  }
+
+  const timeoutId =
+    Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? setTimeout(() => {
+          abortReason = "timeout";
+          controller.abort(new Error("请求超时"));
+        }, timeoutMs)
+      : null;
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (abortReason === "timeout") {
+      throw new Error("请求超时");
+    }
+    throw error;
+  } finally {
+    if (timeoutId != null) {
+      clearTimeout(timeoutId);
+    }
+    removeAbortListener?.();
+  }
 }
 
 /**
@@ -158,11 +199,11 @@ export async function fetchWithTimeout(url, options, timeoutMs = 30000) {
 export function parseSseLine(line) {
   const trimmed = String(line || "").trim();
   if (!trimmed || trimmed.startsWith(":")) return null;
-  
+
   if (trimmed.startsWith("data: ")) {
     const data = trimmed.slice(6).trim();
     if (data === "[DONE]") return { done: true };
-    
+
     try {
       return { data: JSON.parse(data) };
     } catch {
@@ -177,19 +218,23 @@ export function parseSseLine(line) {
  * 处理流式响应
  */
 export async function processStreamResponse(response, onChunk) {
+  if (!response.body) {
+    throw new Error("Streaming response body is missing");
+  }
+
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  
+
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      
+
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() || "";
-      
+
       for (const line of lines) {
         if (line.trim()) {
           await onChunk(line);
@@ -202,7 +247,9 @@ export async function processStreamResponse(response, onChunk) {
       await onChunk(buffer);
     }
   } finally {
-    reader.releaseLock();
+    if (reader.releaseLock) {
+      reader.releaseLock();
+    }
   }
 }
 
@@ -214,13 +261,13 @@ export async function retryWithBackoff(
   { maxRetries = 3, initialDelay = 1000, backoffFactor = 2 } = {},
 ) {
   let lastError;
-  
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       return await fn();
     } catch (error) {
       lastError = error;
-      
+
       if (attempt < maxRetries - 1) {
         const delay = initialDelay * Math.pow(backoffFactor, attempt);
         await new Promise((resolve) => setTimeout(resolve, delay));

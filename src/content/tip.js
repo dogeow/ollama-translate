@@ -10,6 +10,31 @@ let tipElement = null;
 let tipRoot = null;
 let detachDocumentListeners = null;
 let renderToken = 0;
+let onTipHide = null;
+
+function setSyncStorage(value) {
+  return new Promise((resolve, reject) => {
+    chrome.storage.sync.set(value, () => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function sendRuntimeMessage(message) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(message, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(response);
+    });
+  });
+}
 
 function ensureTipRoot() {
   if (tipElement && tipRoot) return;
@@ -112,28 +137,15 @@ function positionTip(anchorRect) {
 }
 
 async function handleTranslateWithModel(result, modelName) {
-  await new Promise((resolve, reject) => {
-    chrome.storage.sync.set({ ollamaModel: modelName }, () => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-        return;
-      }
-      resolve();
-    });
-  });
+  await setSyncStorage({ ollamaModel: modelName });
 
   if (!result.original) return;
 
-  await new Promise((resolve) => {
-    chrome.runtime.sendMessage(
-      {
-        action: "translate",
-        text: result.original,
-        fromTip: true,
-      },
-      () => resolve(),
-    );
-  });
+  await sendRuntimeMessage({
+    action: "translate",
+    text: result.original,
+    fromTip: true,
+  }).catch(() => {});
 }
 
 export function hideTip() {
@@ -147,6 +159,11 @@ export function hideTip() {
     tipElement.remove();
     tipElement = null;
   }
+  onTipHide?.();
+}
+
+export function setTipHideHandler(handler) {
+  onTipHide = typeof handler === "function" ? handler : null;
 }
 
 /**

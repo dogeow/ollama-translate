@@ -66,18 +66,26 @@ export function OptionsApp() {
     let cancelled = false;
 
     async function init() {
-      const [nextSettings, storedTranslateResult, commandList] = await Promise.all([
-        loadSettings(),
-        storageLocalGet(TRANSLATE_RESULT_KEY),
-        commandsGetAll(),
-      ]);
-      if (cancelled) return;
+      try {
+        const [nextSettings, storedTranslateResult, commandList] = await Promise.all([
+          loadSettings(),
+          storageLocalGet(TRANSLATE_RESULT_KEY),
+          commandsGetAll(),
+        ]);
+        if (cancelled) return;
 
-      translateTest.setTestTargetLang(nextSettings.ollamaTranslateTargetLang);
-      setTranslateResult(storedTranslateResult || {});
-      await loadUpdateState();
-      setShortcuts(commandList);
-      await updateConnectionStatus(nextSettings);
+        translateTest.setTestTargetLang(nextSettings.ollamaTranslateTargetLang);
+        setTranslateResult(storedTranslateResult || {});
+        setShortcuts(commandList);
+
+        await loadUpdateState();
+        if (cancelled) return;
+
+        await updateConnectionStatus(nextSettings);
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Failed to initialize options page:", error);
+      }
     }
 
     void init();
