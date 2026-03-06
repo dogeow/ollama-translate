@@ -17,8 +17,12 @@ import {
  */
 export function usePopupSettings() {
   const [provider, setProvider] = useState(DEFAULT_TRANSLATE_PROVIDER);
-  const [autoTranslateMode, setAutoTranslateMode] = useState(DEFAULT_AUTO_TRANSLATE_MODE);
-  const [hoverTranslateScope, setHoverTranslateScope] = useState(DEFAULT_HOVER_TRANSLATE_SCOPE);
+  const [autoTranslateMode, setAutoTranslateMode] = useState(
+    DEFAULT_AUTO_TRANSLATE_MODE,
+  );
+  const [hoverTranslateScope, setHoverTranslateScope] = useState(
+    DEFAULT_HOVER_TRANSLATE_SCOPE,
+  );
   const [appEnabled, setAppEnabled] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -30,10 +34,13 @@ export function usePopupSettings() {
         ollamaAutoTranslateMode: DEFAULT_AUTO_TRANSLATE_MODE,
         ollamaAutoTranslateSelection: false,
         ollamaHoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
-        ollamaAppEnabled: true,
+        appEnabled: true,
+        minimaxRegion: undefined,
       },
       (value) => {
-        setProvider(normalizeTranslateProvider(value.ollamaProvider));
+        setProvider(
+          normalizeTranslateProvider(value.ollamaProvider, value.minimaxRegion),
+        );
         setAutoTranslateMode(
           normalizeAutoTranslateMode(
             value.ollamaAutoTranslateMode,
@@ -43,7 +50,7 @@ export function usePopupSettings() {
         setHoverTranslateScope(
           normalizeHoverTranslateScope(value.ollamaHoverTranslateScope),
         );
-        setAppEnabled(value.ollamaAppEnabled !== false);
+        setAppEnabled(value.appEnabled !== false);
       },
     );
   }, []);
@@ -53,15 +60,28 @@ export function usePopupSettings() {
     function handleStorageChanged(changes, areaName) {
       if (areaName !== "sync") return;
 
-      if ("ollamaAppEnabled" in changes) {
-        setAppEnabled(changes.ollamaAppEnabled.newValue !== false);
+      if ("appEnabled" in changes) {
+        setAppEnabled(changes.appEnabled?.newValue !== false);
       }
 
       if ("ollamaProvider" in changes) {
-        setProvider(normalizeTranslateProvider(changes.ollamaProvider.newValue));
+        chrome.storage.sync.get(
+          {
+            ollamaProvider: DEFAULT_TRANSLATE_PROVIDER,
+            minimaxRegion: undefined,
+          },
+          (v) => {
+            setProvider(
+              normalizeTranslateProvider(v.ollamaProvider, v.minimaxRegion),
+            );
+          },
+        );
       }
 
-      if ("ollamaAutoTranslateMode" in changes || "ollamaAutoTranslateSelection" in changes) {
+      if (
+        "ollamaAutoTranslateMode" in changes ||
+        "ollamaAutoTranslateSelection" in changes
+      ) {
         chrome.storage.sync.get(
           {
             ollamaAutoTranslateMode: DEFAULT_AUTO_TRANSLATE_MODE,
@@ -80,7 +100,9 @@ export function usePopupSettings() {
 
       if ("ollamaHoverTranslateScope" in changes) {
         setHoverTranslateScope(
-          normalizeHoverTranslateScope(changes.ollamaHoverTranslateScope.newValue),
+          normalizeHoverTranslateScope(
+            changes.ollamaHoverTranslateScope.newValue,
+          ),
         );
       }
     }
@@ -129,7 +151,7 @@ export function usePopupSettings() {
   const toggleAppEnabled = useCallback(() => {
     setAppEnabled((prevEnabled) => {
       const nextEnabled = !prevEnabled;
-      syncSettings({ ollamaAppEnabled: nextEnabled });
+      syncSettings({ appEnabled: nextEnabled });
       return nextEnabled;
     });
   }, [syncSettings]);
@@ -152,7 +174,8 @@ export function usePopupSettings() {
  */
 export function usePageTranslate(appEnabled) {
   const [isStarting, setIsStarting] = useState(false);
-  const { message: status, showMessage: showStatus } = useTemporaryMessage(2800);
+  const { message: status, showMessage: showStatus } =
+    useTemporaryMessage(2800);
 
   const startPageTranslate = useCallback(() => {
     if (isStarting) return;

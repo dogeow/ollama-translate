@@ -1,5 +1,6 @@
 import { generateOllamaStreamingResponse } from "./ollama.js";
-import { PROVIDER_MINIMAX, PROVIDER_OLLAMA } from "../shared/constants.js";
+import { PROVIDER_OLLAMA } from "../shared/constants.js";
+import { isMiniMaxProvider } from "../shared/settings.js";
 import { generateMiniMaxStreamingCompletion } from "../shared/minimax-api.js";
 
 const SENTENCE_STUDY_MAX_TEXT_LENGTH = 1200;
@@ -92,7 +93,7 @@ async function runSentenceStudyCompletion(base, model, prompt, runtime = {}) {
   }
 
   let streamed = { response: "", thinking: "" };
-  if (provider === PROVIDER_MINIMAX) {
+  if (isMiniMaxProvider(provider)) {
     streamed = await withTimeout(
       generateMiniMaxStreamingCompletion(
         base,
@@ -281,7 +282,10 @@ function isLikelyUntranslatedPart(part, translation) {
   const value = sanitizePartTranslation(translation);
   if (!value) return true;
   const source = sanitizePartTranslation(part?.text || "");
-  if (source && normalizeComparableText(value) === normalizeComparableText(source)) {
+  if (
+    source &&
+    normalizeComparableText(value) === normalizeComparableText(source)
+  ) {
     return true;
   }
   if (hasLatinLetters(value) && !hasCjkChars(value)) return true;
@@ -624,7 +628,11 @@ function buildHeuristicSentenceStudy(original) {
     function isLikelyFiniteVerb(token) {
       if (!token) return false;
       if (AUXILIARY_VERBS.has(token)) return true;
-      if (/^(enable|enables|allow|allows|help|helps|make|makes|provide|provides)$/i.test(token)) {
+      if (
+        /^(enable|enables|allow|allows|help|helps|make|makes|provide|provides)$/i.test(
+          token,
+        )
+      ) {
         return true;
       }
       return /^[a-z]{3,}(s|ed)$/i.test(token);
@@ -680,11 +688,7 @@ function buildHeuristicSentenceStudy(original) {
 
     restChunks.forEach((chunk, index) => {
       const label =
-        index === 0
-          ? /^to\b/i.test(chunk)
-            ? "补足成分"
-            : "宾语"
-          : "状语";
+        index === 0 ? (/^to\b/i.test(chunk) ? "补足成分" : "宾语") : "状语";
       pushSentencePart(clauseParts, { text: chunk, label });
     });
 
@@ -697,7 +701,9 @@ function buildHeuristicSentenceStudy(original) {
     const mainClause = targetSentence.slice(commaIndex + 1).trim();
     if (lead && mainClause) {
       pushSentencePart(parts, { text: lead, label: "状语" });
-      splitMainClause(mainClause).forEach((part) => pushSentencePart(parts, part));
+      splitMainClause(mainClause).forEach((part) =>
+        pushSentencePart(parts, part),
+      );
     }
   }
 
@@ -756,7 +762,9 @@ function shouldUseHeuristicFallback(sentenceStudy, original) {
   if (parts.length <= 1) return true;
 
   const targetSentence = normalizeInlineWhitespace(getFirstSentence(original));
-  const combined = normalizeInlineWhitespace(parts.map((part) => part.text).join(" "));
+  const combined = normalizeInlineWhitespace(
+    parts.map((part) => part.text).join(" "),
+  );
   if (targetSentence && combined !== targetSentence) return true;
 
   const uniqueLabels = new Set(
@@ -894,13 +902,15 @@ function translateEnglishPhraseLocally(text) {
 
   const powerMatch = source.match(/^with\s+the\s+power\s+of\s+(.+)$/i);
   if (powerMatch) {
-    const body = translateEnglishPhraseLocally(powerMatch[1]) || powerMatch[1].trim();
+    const body =
+      translateEnglishPhraseLocally(powerMatch[1]) || powerMatch[1].trim();
     return sanitizePartTranslation(`借助${body}的能力`);
   }
 
   const usedByMatch = source.match(/^used\s+by\s+(.+)$/i);
   if (usedByMatch) {
-    const body = translateEnglishPhraseLocally(usedByMatch[1]) || usedByMatch[1].trim();
+    const body =
+      translateEnglishPhraseLocally(usedByMatch[1]) || usedByMatch[1].trim();
     return sanitizePartTranslation(`被${body}使用`);
   }
 
@@ -993,7 +1003,9 @@ function buildLocalPartTranslation(part, fullTranslation, index) {
     if (clauseCandidate) return clauseCandidate;
   }
 
-  const phraseMatch = sourceText.match(/^(in|on|at|by|with|without|for|to)\s+(.+)$/i);
+  const phraseMatch = sourceText.match(
+    /^(in|on|at|by|with|without|for|to)\s+(.+)$/i,
+  );
   if (phraseMatch) {
     const [, preposition, bodyText] = phraseMatch;
     const body = translateEnglishPhraseLocally(bodyText);
@@ -1222,14 +1234,20 @@ async function fillSentenceStudyTranslations(
     return sentenceStudy;
 
   function resolvePartTranslationWithoutRequest(part, index) {
-    const existingTranslation = sanitizePartTranslation(part?.translation || "");
+    const existingTranslation = sanitizePartTranslation(
+      part?.translation || "",
+    );
     if (
       isReasonablePartTranslation(part, existingTranslation) &&
       !isLikelyUntranslatedPart(part, existingTranslation)
     ) {
       return existingTranslation;
     }
-    const localFallback = buildLocalPartTranslation(part, fullTranslation, index);
+    const localFallback = buildLocalPartTranslation(
+      part,
+      fullTranslation,
+      index,
+    );
     if (localFallback) return localFallback;
 
     if (isReasonablePartTranslation(part, existingTranslation)) {
@@ -1325,12 +1343,18 @@ ${translation || ""}`;
       ? buildHeuristicSentenceStudy(text)
       : sentenceStudy;
     if (!fallback) return null;
-    const finalized = await fillSentenceStudyTranslations(fallback, translation);
+    const finalized = await fillSentenceStudyTranslations(
+      fallback,
+      translation,
+    );
     return attachSentenceStudyThinking(finalized, trace);
   } catch (_) {
     const fallback = buildHeuristicSentenceStudy(text);
     if (!fallback) return null;
-    const finalized = await fillSentenceStudyTranslations(fallback, translation);
+    const finalized = await fillSentenceStudyTranslations(
+      fallback,
+      translation,
+    );
     return attachSentenceStudyThinking(finalized, trace);
   }
 }

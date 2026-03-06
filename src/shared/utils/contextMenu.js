@@ -34,7 +34,7 @@ export async function readMenuSettings() {
     ollamaAutoTranslateMode: "hotkey",
     ollamaAutoTranslateSelection: false,
     ollamaHoverTranslateScope: "word",
-    ollamaAppEnabled: DEFAULT_APP_ENABLED,
+    appEnabled: DEFAULT_APP_ENABLED,
   });
 
   return {
@@ -45,7 +45,7 @@ export async function readMenuSettings() {
     hoverTranslateScope: normalizeHoverTranslateScope(
       stored.ollamaHoverTranslateScope,
     ),
-    appEnabled: stored.ollamaAppEnabled,
+    appEnabled: stored.appEnabled !== false,
   };
 }
 

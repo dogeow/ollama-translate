@@ -1,13 +1,15 @@
 import {
-  DEFAULT_MINIMAX_API_URL_CN,
-  DEFAULT_MINIMAX_API_URL_GLOBAL,
   LANG_OPTIONS,
+  MINIMAX_REGION_CN,
   MINIMAX_REGION_GLOBAL,
-  MINIMAX_REGION_OPTIONS,
-  PROVIDER_MINIMAX,
+  PROVIDER_MINIMAX_CN,
+  PROVIDER_MINIMAX_GLOBAL,
   TRANSLATE_PROVIDER_OPTIONS,
 } from "../../shared/constants.js";
-import { normalizeMiniMaxRegion } from "../../shared/settings.js";
+import {
+  getDefaultMiniMaxApiUrlByRegion,
+  isMiniMaxProvider,
+} from "../../shared/settings.js";
 import { Card } from "./common/Card.jsx";
 import {
   AutoSaveInputField,
@@ -30,8 +32,10 @@ export function HomeTab({
   testConnectionResult,
   updateConnectionStatus,
 }) {
-  const isMiniMax = settings.ollamaProvider === PROVIDER_MINIMAX;
-  const testConnectionClassName = getConnectionResultClass(testConnectionResult.tone);
+  const isMiniMax = isMiniMaxProvider(settings.ollamaProvider);
+  const testConnectionClassName = getConnectionResultClass(
+    testConnectionResult.tone,
+  );
   const minimaxConfig = getMiniMaxConfig(settings);
   const isMiniMaxKeyMissing = checkMiniMaxKeyMissing(settings);
   const minimaxKeyMissingHint = `请先填写${minimaxConfig.apiKeyLabel}`;
@@ -41,33 +45,21 @@ export function HomeTab({
       ...settingsRef.current,
       ollamaProvider: newProvider,
     };
+    if (
+      newProvider === PROVIDER_MINIMAX_CN ||
+      newProvider === PROVIDER_MINIMAX_GLOBAL
+    ) {
+      const region =
+        newProvider === PROVIDER_MINIMAX_GLOBAL
+          ? MINIMAX_REGION_GLOBAL
+          : MINIMAX_REGION_CN;
+      nextSettings.minimaxRegion = region;
+      nextSettings.minimaxApiUrl = getDefaultMiniMaxApiUrlByRegion(region);
+    }
     updateSettings(() => nextSettings, "now");
     void updateConnectionStatus(nextSettings, {
       skipModalOnError: true,
       preserveTestMessage: false,
-    });
-  };
-
-  const handleRegionChange = (event, newRegion) => {
-    const normalizedRegion = normalizeMiniMaxRegion(newRegion);
-    const nextApiUrl =
-      normalizedRegion === MINIMAX_REGION_GLOBAL
-        ? DEFAULT_MINIMAX_API_URL_GLOBAL
-        : DEFAULT_MINIMAX_API_URL_CN;
-    const nextSettings = {
-      ...settingsRef.current,
-      minimaxRegion: normalizedRegion,
-      minimaxApiUrl: nextApiUrl,
-    };
-    const hasKey = normalizedRegion === MINIMAX_REGION_GLOBAL
-      ? !!String(nextSettings.minimaxApiKeyGlobal || "").trim()
-      : !!String(nextSettings.minimaxApiKeyCn || "").trim();
-
-    updateSettings(() => nextSettings, "now");
-    void updateConnectionStatus(nextSettings, {
-      skipModalOnError: true,
-      preserveTestMessage: false,
-      suppressTestMessageOnMissingKey: !hasKey,
     });
   };
 
@@ -83,18 +75,6 @@ export function HomeTab({
           updateSettings={updateSettings}
           onChange={handleProviderChange}
         />
-
-        <ConditionalFields condition={isMiniMax}>
-          <AutoSaveSelectField
-            id="minimaxRegion"
-            label="MiniMax 区域"
-            value={minimaxConfig.region}
-            options={MINIMAX_REGION_OPTIONS}
-            settingKey="minimaxRegion"
-            updateSettings={updateSettings}
-            onChange={handleRegionChange}
-          />
-        </ConditionalFields>
 
         <AutoSaveInputField
           id="providerApiUrl"
@@ -179,14 +159,14 @@ export function HomeTab({
       <div className="card">
         <h2>翻译偏好</h2>
         <div className="field">
-          <label htmlFor="ollamaTranslateTargetLang">默认翻译语言</label>
+          <label htmlFor="translateTargetLang">默认翻译语言</label>
           <select
-            id="ollamaTranslateTargetLang"
+            id="translateTargetLang"
             className="select"
-            value={settings.ollamaTranslateTargetLang}
+            value={settings.translateTargetLang}
             onChange={(event) => {
               updateSettings(
-                { ollamaTranslateTargetLang: event.target.value },
+                { translateTargetLang: event.target.value },
                 "now",
               );
             }}

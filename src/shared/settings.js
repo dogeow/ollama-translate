@@ -7,6 +7,8 @@
 import {
   PROVIDER_OLLAMA,
   PROVIDER_MINIMAX,
+  PROVIDER_MINIMAX_CN,
+  PROVIDER_MINIMAX_GLOBAL,
   DEFAULT_TRANSLATE_PROVIDER,
   DEFAULT_OLLAMA_URL,
   DEFAULT_OLLAMA_MODEL,
@@ -52,12 +54,49 @@ export const DEFAULT_SETTINGS = {
 };
 
 /**
- * 规范化翻译提供商
- * @param {string} provider - 提供商
- * @returns {string} 规范化后的提供商：'ollama' | 'minimax'
+ * 是否为 MiniMax 系厂家（含国内/海外及旧版 minimax）
+ * @param {string} provider
+ * @returns {boolean}
  */
-export function normalizeTranslateProvider(provider) {
-  return provider === PROVIDER_MINIMAX ? PROVIDER_MINIMAX : PROVIDER_OLLAMA;
+export function isMiniMaxProvider(provider) {
+  return (
+    provider === PROVIDER_MINIMAX ||
+    provider === PROVIDER_MINIMAX_CN ||
+    provider === PROVIDER_MINIMAX_GLOBAL
+  );
+}
+
+/**
+ * 从厂家值得到 MiniMax 区域（仅当 isMiniMaxProvider 为 true 时有效）
+ * @param {string} provider
+ * @returns {string} MINIMAX_REGION_CN | MINIMAX_REGION_GLOBAL
+ */
+export function getMiniMaxRegionFromProvider(provider) {
+  return provider === PROVIDER_MINIMAX_GLOBAL
+    ? MINIMAX_REGION_GLOBAL
+    : MINIMAX_REGION_CN;
+}
+
+/**
+ * 规范化翻译提供商
+ * 旧版单一 "minimax" 根据 minimaxRegion 转为 minimax-cn / minimax-global
+ * @param {string} provider - 提供商
+ * @param {string} [minimaxRegion] - 仅当 provider 为 legacy "minimax" 时用于解析
+ * @returns {string} 规范化后的提供商：'ollama' | 'minimax-cn' | 'minimax-global'
+ */
+export function normalizeTranslateProvider(provider, minimaxRegion) {
+  if (
+    provider === PROVIDER_MINIMAX_CN ||
+    provider === PROVIDER_MINIMAX_GLOBAL
+  ) {
+    return provider;
+  }
+  if (provider === PROVIDER_MINIMAX) {
+    return normalizeMiniMaxRegion(minimaxRegion) === MINIMAX_REGION_GLOBAL
+      ? PROVIDER_MINIMAX_GLOBAL
+      : PROVIDER_MINIMAX_CN;
+  }
+  return PROVIDER_OLLAMA;
 }
 
 /**
@@ -100,6 +139,13 @@ export function isMiniMaxGlobalApiUrl(value) {
 }
 
 function resolveMiniMaxRegionFromInput(input = {}) {
+  const provider = input.ollamaProvider;
+  if (provider === PROVIDER_MINIMAX_GLOBAL) return MINIMAX_REGION_GLOBAL;
+  if (provider === PROVIDER_MINIMAX_CN || provider === PROVIDER_MINIMAX) {
+    return input.minimaxRegion
+      ? normalizeMiniMaxRegion(input.minimaxRegion)
+      : MINIMAX_REGION_CN;
+  }
   if (input.minimaxRegion) {
     return normalizeMiniMaxRegion(input.minimaxRegion);
   }
@@ -128,7 +174,9 @@ export function resolveMiniMaxApiKey(input = {}) {
       input.minimaxApiKey ??
       DEFAULT_MINIMAX_API_KEY_GLOBAL,
   ).trim();
-  const legacyKey = String(input.minimaxApiKey ?? DEFAULT_MINIMAX_API_KEY).trim();
+  const legacyKey = String(
+    input.minimaxApiKey ?? DEFAULT_MINIMAX_API_KEY,
+  ).trim();
 
   if (region === MINIMAX_REGION_GLOBAL) {
     return globalKey || legacyKey;
@@ -156,7 +204,8 @@ export function getMiniMaxApiKeyLabel(input) {
  * @returns {string} 规范化后的模式：'selection' | 'hover' | 'hotkey'
  */
 export function normalizeAutoTranslateMode(mode, legacySelection = false) {
-  if (mode === "selection" || mode === "hover" || mode === "hotkey") return mode;
+  if (mode === "selection" || mode === "hover" || mode === "hotkey")
+    return mode;
   return legacySelection ? "selection" : DEFAULT_SETTINGS.autoTranslateMode;
 }
 
@@ -193,7 +242,8 @@ export function normalizePageTranslateConcurrency(value) {
   if (value === "" || value == null)
     return DEFAULT_SETTINGS.pageTranslateConcurrency;
   const number = Number(value);
-  if (!Number.isFinite(number)) return DEFAULT_SETTINGS.pageTranslateConcurrency;
+  if (!Number.isFinite(number))
+    return DEFAULT_SETTINGS.pageTranslateConcurrency;
   return Math.min(8, Math.max(1, Math.round(number)));
 }
 
@@ -216,7 +266,15 @@ export function normalizePageTranslateBatchSize(value) {
  * @returns {object} 规范化后的设置对象
  */
 export function normalizeAllSettings(settings) {
-  const minimaxRegion = resolveMiniMaxRegionFromInput(settings);
+  const rawProvider = settings.ollamaProvider;
+  const ollamaProvider = normalizeTranslateProvider(
+    rawProvider,
+    settings.minimaxRegion,
+  );
+  const minimaxRegion = resolveMiniMaxRegionFromInput({
+    ...settings,
+    ollamaProvider,
+  });
   const minimaxApiUrlRaw = String(settings.minimaxApiUrl || "").trim();
   const minimaxApiUrl = minimaxApiUrlRaw
     ? normalizeMiniMaxApiUrl(minimaxApiUrlRaw)
@@ -232,6 +290,7 @@ export function normalizeAllSettings(settings) {
       DEFAULT_SETTINGS.minimaxApiKeyGlobal,
   ).trim();
   const minimaxApiKey = resolveMiniMaxApiKey({
+    ollamaProvider,
     minimaxRegion,
     minimaxApiUrl,
     minimaxApiKeyCn,
@@ -240,7 +299,7 @@ export function normalizeAllSettings(settings) {
   });
 
   return {
-    ollamaProvider: normalizeTranslateProvider(settings.ollamaProvider),
+    ollamaProvider,
     ollamaUrl: (settings.ollamaUrl || DEFAULT_SETTINGS.ollamaUrl).replace(
       /\/$/,
       "",
@@ -252,9 +311,8 @@ export function normalizeAllSettings(settings) {
     minimaxApiKeyCn,
     minimaxApiKeyGlobal,
     minimaxModel: settings.minimaxModel || DEFAULT_SETTINGS.minimaxModel,
-    ollamaTranslateTargetLang:
-      settings.ollamaTranslateTargetLang ||
-      DEFAULT_SETTINGS.translateTargetLang,
+    translateTargetLang:
+      settings.translateTargetLang || DEFAULT_SETTINGS.translateTargetLang,
     ollamaAutoTranslateMode: normalizeAutoTranslateMode(
       settings.ollamaAutoTranslateMode,
       settings.ollamaAutoTranslateSelection,
@@ -271,6 +329,6 @@ export function normalizeAllSettings(settings) {
     ollamaPageTranslateBatchSize: normalizePageTranslateBatchSize(
       settings.ollamaPageTranslateBatchSize,
     ),
-    ollamaLearningModeEnabled: !!settings.ollamaLearningModeEnabled,
+    learningModeEnabled: !!settings.learningModeEnabled,
   };
 }

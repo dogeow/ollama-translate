@@ -115,11 +115,24 @@ function initContentScript() {
     return hanCount / significantChars.length >= 0.6;
   }
 
+  function isChineseIdentifierText(text) {
+    const value = String(text || "").trim();
+    if (!value) return false;
+    if (!HAN_CHAR_RE.test(value)) return false;
+    if (!/\d/.test(value)) return false;
+    if (!/^[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\dA-Za-z\-·.]+$/.test(value))
+      return false;
+    const digits = value.match(/\d/g) || [];
+    return digits.length / value.length >= 0.3;
+  }
+
   function shouldSkipHoverTranslate(text) {
+    if (isChineseIdentifierText(text)) return true;
     return translateTargetLang === "Chinese" && isMostlyChineseText(text);
   }
 
   function shouldSkipPageTranslate(text) {
+    if (isChineseIdentifierText(text)) return true;
     return translateTargetLang === "Chinese" && isMostlyChineseText(text);
   }
 
@@ -129,7 +142,7 @@ function initContentScript() {
       cfg.ollamaAutoTranslateSelection,
     );
     translateTargetLang =
-      cfg.ollamaTranslateTargetLang || DEFAULT_TRANSLATE_TARGET_LANG;
+      cfg.translateTargetLang ?? DEFAULT_TRANSLATE_TARGET_LANG;
     hoverTranslateScope = normalizeHoverTranslateScope(
       cfg.ollamaHoverTranslateScope,
     );
@@ -157,7 +170,7 @@ function initContentScript() {
     {
       ollamaAutoTranslateMode: DEFAULT_AUTO_TRANSLATE_MODE,
       ollamaAutoTranslateSelection: false,
-      ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
+      translateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
       ollamaHoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
       ollamaHoverTranslateDelayMs: DEFAULT_HOVER_TRANSLATE_DELAY_MS,
       ollamaPageTranslateConcurrency: DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
@@ -171,7 +184,7 @@ function initContentScript() {
     if (
       !("ollamaAutoTranslateMode" in changes) &&
       !("ollamaAutoTranslateSelection" in changes) &&
-      !("ollamaTranslateTargetLang" in changes) &&
+      !("translateTargetLang" in changes) &&
       !("ollamaHoverTranslateScope" in changes) &&
       !("ollamaHoverTranslateDelayMs" in changes) &&
       !("ollamaPageTranslateConcurrency" in changes) &&
@@ -183,7 +196,7 @@ function initContentScript() {
       {
         ollamaAutoTranslateMode: DEFAULT_AUTO_TRANSLATE_MODE,
         ollamaAutoTranslateSelection: false,
-        ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
+        translateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
         ollamaHoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
         ollamaHoverTranslateDelayMs: DEFAULT_HOVER_TRANSLATE_DELAY_MS,
         ollamaPageTranslateConcurrency: DEFAULT_PAGE_TRANSLATE_CONCURRENCY,

@@ -3,14 +3,17 @@
  * 所有模块应从此文件导入，避免重复定义
  */
 
-// 翻译提供商
+// 翻译提供商（MiniMax 国内外在厂家层面区分）
 export const PROVIDER_OLLAMA = "ollama";
-export const PROVIDER_MINIMAX = "minimax";
+export const PROVIDER_MINIMAX = "minimax"; // legacy
+export const PROVIDER_MINIMAX_CN = "minimax-cn";
+export const PROVIDER_MINIMAX_GLOBAL = "minimax-global";
 export const DEFAULT_TRANSLATE_PROVIDER = PROVIDER_OLLAMA;
 
 export const TRANSLATE_PROVIDER_OPTIONS = [
-  { value: PROVIDER_OLLAMA, label: "Ollama" },
-  { value: PROVIDER_MINIMAX, label: "MiniMax" },
+  { value: PROVIDER_OLLAMA, label: "Ollama（本地）" },
+  { value: PROVIDER_MINIMAX_CN, label: "MiniMax（国内）" },
+  { value: PROVIDER_MINIMAX_GLOBAL, label: "MiniMax（海外）" },
 ];
 
 // Ollama 连接配置

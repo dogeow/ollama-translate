@@ -821,11 +821,13 @@ body {
   font-weight: 500;
 }
 
-.choice-item__hint {
+.choice-item__hint,
+.choice-item__desc {
   grid-column: 2;
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.5;
+  min-width: 0; /* 允许在 grid 单元格内正常换行，避免文字竖排 */
 }
 
 /* ===== Input with suffix ===== */

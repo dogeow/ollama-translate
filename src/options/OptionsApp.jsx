@@ -67,14 +67,15 @@ export function OptionsApp() {
 
     async function init() {
       try {
-        const [nextSettings, storedTranslateResult, commandList] = await Promise.all([
-          loadSettings(),
-          storageLocalGet(TRANSLATE_RESULT_KEY),
-          commandsGetAll(),
-        ]);
+        const [nextSettings, storedTranslateResult, commandList] =
+          await Promise.all([
+            loadSettings(),
+            storageLocalGet(TRANSLATE_RESULT_KEY),
+            commandsGetAll(),
+          ]);
         if (cancelled) return;
 
-        translateTest.setTestTargetLang(nextSettings.ollamaTranslateTargetLang);
+        translateTest.setTestTargetLang(nextSettings.translateTargetLang);
         setTranslateResult(storedTranslateResult || {});
         setShortcuts(commandList);
 
@@ -100,7 +101,9 @@ export function OptionsApp() {
   }
 
   if (view === "translate-result") {
-    return <TranslateResultView result={translateResult} onBack={openOptionsView} />;
+    return (
+      <TranslateResultView result={translateResult} onBack={openOptionsView} />
+    );
   }
 
   return (
@@ -125,9 +128,17 @@ export function OptionsApp() {
             onOpenOrigins={() => setOriginsModalOpen(true)}
           />
           <div className="options-tabs">
-            <div className="options-tabs__tablist" role="tablist" aria-label="设置"></div>
+            <div
+              className="options-tabs__tablist"
+              role="tablist"
+              aria-label="设置"
+            ></div>
 
-            <div className="options-tabs__panel" hidden={activeTab !== "home"} key="home">
+            <div
+              className="options-tabs__panel"
+              hidden={activeTab !== "home"}
+              key="home"
+            >
               <HomeTab
                 settings={settings}
                 updateSettings={updateSettings}
@@ -144,7 +155,11 @@ export function OptionsApp() {
               />
             </div>
 
-            <div className="options-tabs__panel" hidden={activeTab !== "translate"} key="translate">
+            <div
+              className="options-tabs__panel"
+              hidden={activeTab !== "translate"}
+              key="translate"
+            >
               <TranslateTestTab
                 testInput={translateTest.testInput}
                 setTestInput={translateTest.setTestInput}
@@ -160,7 +175,11 @@ export function OptionsApp() {
               />
             </div>
 
-            <div className="options-tabs__panel" hidden={activeTab !== "shortcuts"} key="shortcuts">
+            <div
+              className="options-tabs__panel"
+              hidden={activeTab !== "shortcuts"}
+              key="shortcuts"
+            >
               <ShortcutsTab
                 settings={settings}
                 settingsRef={settingsRef}
@@ -171,18 +190,30 @@ export function OptionsApp() {
               />
             </div>
 
-            <div className="options-tabs__panel" hidden={activeTab !== "logs"} key="logs">
+            <div
+              className="options-tabs__panel"
+              hidden={activeTab !== "logs"}
+              key="logs"
+            >
               <AiLogsTab />
             </div>
 
-            <div className="options-tabs__panel" hidden={activeTab !== "learning"} key="learning">
+            <div
+              className="options-tabs__panel"
+              hidden={activeTab !== "learning"}
+              key="learning"
+            >
               <LearningTab
                 settings={settings}
                 updateSettings={updateSettings}
               />
             </div>
 
-            <div className="options-tabs__panel" hidden={activeTab !== "about"} key="about">
+            <div
+              className="options-tabs__panel"
+              hidden={activeTab !== "about"}
+              key="about"
+            >
               <AboutTab
                 currentVersion={currentVersion}
                 updateState={updateState}
@@ -192,7 +223,9 @@ export function OptionsApp() {
             </div>
           </div>
         </main>
-        <p className={`status ${autoSaveStatus.isError ? "status--error" : ""}`.trim()}>
+        <p
+          className={`status ${autoSaveStatus.isError ? "status--error" : ""}`.trim()}
+        >
           {autoSaveStatus.text}
         </p>
       </div>

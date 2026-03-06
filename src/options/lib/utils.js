@@ -1,6 +1,7 @@
 import {
   PROVIDER_OLLAMA,
-  PROVIDER_MINIMAX,
+  PROVIDER_MINIMAX_CN,
+  PROVIDER_MINIMAX_GLOBAL,
   DEFAULT_TRANSLATE_PROVIDER,
   DEFAULT_OLLAMA_MODEL,
   DEFAULT_OLLAMA_URL,
@@ -23,7 +24,9 @@ import {
   normalizeMiniMaxApiUrl,
   normalizeMiniMaxRegion,
   getDefaultMiniMaxApiUrlByRegion,
+  getMiniMaxRegionFromProvider,
   isMiniMaxGlobalApiUrl,
+  isMiniMaxProvider,
   resolveMiniMaxApiKey,
   getMiniMaxApiKeyLabel,
   normalizeAutoTranslateMode,
@@ -46,20 +49,22 @@ export {
 };
 
 export function getSettingsSnapshot(settings) {
-  const url = (String(settings.ollamaUrl || "").trim() || DEFAULT_OLLAMA_URL).replace(
-    /\/$/,
-    "",
-  );
+  const url = (
+    String(settings.ollamaUrl || "").trim() || DEFAULT_OLLAMA_URL
+  ).replace(/\/$/, "");
   const base = url.startsWith("http") ? url : `http://${url}`;
   const provider = normalizeTranslateProvider(
     settings.ollamaProvider || DEFAULT_TRANSLATE_PROVIDER,
+    settings.minimaxRegion,
   );
-  const minimaxRegion = normalizeMiniMaxRegion(
-    settings.minimaxRegion ||
-      (isMiniMaxGlobalApiUrl(settings.minimaxApiUrl)
-        ? MINIMAX_REGION_GLOBAL
-        : DEFAULT_MINIMAX_REGION),
-  );
+  const minimaxRegion = isMiniMaxProvider(provider)
+    ? getMiniMaxRegionFromProvider(provider)
+    : normalizeMiniMaxRegion(
+        settings.minimaxRegion ||
+          (isMiniMaxGlobalApiUrl(settings.minimaxApiUrl)
+            ? MINIMAX_REGION_GLOBAL
+            : DEFAULT_MINIMAX_REGION),
+      );
   const minimaxApiUrlRaw = String(settings.minimaxApiUrl || "").trim();
   const minimaxApiUrl = minimaxApiUrlRaw
     ? normalizeMiniMaxApiUrl(minimaxApiUrlRaw)
@@ -75,6 +80,7 @@ export function getSettingsSnapshot(settings) {
       DEFAULT_MINIMAX_API_KEY_GLOBAL,
   ).trim();
   const minimaxApiKey = resolveMiniMaxApiKey({
+    ollamaProvider: provider,
     minimaxRegion,
     minimaxApiUrl,
     minimaxApiKeyCn,
@@ -85,7 +91,8 @@ export function getSettingsSnapshot(settings) {
   return {
     ollamaProvider: provider,
     ollamaUrl: base,
-    ollamaModel: String(settings.ollamaModel || "").trim() || DEFAULT_OLLAMA_MODEL,
+    ollamaModel:
+      String(settings.ollamaModel || "").trim() || DEFAULT_OLLAMA_MODEL,
     minimaxApiUrl,
     minimaxRegion,
     minimaxApiKey,
@@ -93,8 +100,8 @@ export function getSettingsSnapshot(settings) {
     minimaxApiKeyGlobal,
     minimaxModel:
       String(settings.minimaxModel || "").trim() || DEFAULT_MINIMAX_MODEL,
-    ollamaTranslateTargetLang:
-      settings.ollamaTranslateTargetLang || DEFAULT_TRANSLATE_TARGET_LANG,
+    translateTargetLang:
+      settings.translateTargetLang ?? DEFAULT_TRANSLATE_TARGET_LANG,
     ollamaAutoTranslateMode: normalizeAutoTranslateMode(
       settings.ollamaAutoTranslateMode,
     ),
@@ -113,16 +120,16 @@ export function getSettingsSnapshot(settings) {
     ollamaPageTranslateBatchSize: normalizePageTranslateBatchSize(
       settings.ollamaPageTranslateBatchSize,
     ),
-    ollamaLearningModeEnabled: !!settings.ollamaLearningModeEnabled,
+    learningModeEnabled: !!settings.learningModeEnabled,
   };
 }
 
 export function getConfig(settings) {
   const snapshot = getSettingsSnapshot(settings);
-  if (snapshot.ollamaProvider === PROVIDER_MINIMAX) {
+  if (isMiniMaxProvider(snapshot.ollamaProvider)) {
     const apiKey = resolveMiniMaxApiKey(snapshot);
     return {
-      provider: PROVIDER_MINIMAX,
+      provider: snapshot.ollamaProvider,
       base: snapshot.minimaxApiUrl,
       model: snapshot.minimaxModel,
       apiKey,
@@ -140,12 +147,18 @@ export function getConfig(settings) {
 }
 
 export function getStoredSettingsShape(stored) {
-  const minimaxRegion = normalizeMiniMaxRegion(
-    stored.minimaxRegion ||
-      (isMiniMaxGlobalApiUrl(stored.minimaxApiUrl)
-        ? MINIMAX_REGION_GLOBAL
-        : DEFAULT_MINIMAX_REGION),
+  const normalizedProvider = normalizeTranslateProvider(
+    stored.ollamaProvider || DEFAULT_TRANSLATE_PROVIDER,
+    stored.minimaxRegion,
   );
+  const minimaxRegion = isMiniMaxProvider(normalizedProvider)
+    ? getMiniMaxRegionFromProvider(normalizedProvider)
+    : normalizeMiniMaxRegion(
+        stored.minimaxRegion ||
+          (isMiniMaxGlobalApiUrl(stored.minimaxApiUrl)
+            ? MINIMAX_REGION_GLOBAL
+            : DEFAULT_MINIMAX_REGION),
+      );
   const minimaxApiUrlRaw = String(stored.minimaxApiUrl || "").trim();
   const minimaxApiUrl = minimaxApiUrlRaw
     ? normalizeMiniMaxApiUrl(minimaxApiUrlRaw)
@@ -161,6 +174,7 @@ export function getStoredSettingsShape(stored) {
       DEFAULT_MINIMAX_API_KEY_GLOBAL,
   ).trim();
   const minimaxApiKey = resolveMiniMaxApiKey({
+    ollamaProvider: normalizedProvider,
     minimaxRegion,
     minimaxApiUrl,
     minimaxApiKeyCn,
@@ -169,9 +183,7 @@ export function getStoredSettingsShape(stored) {
   });
 
   return {
-    ollamaProvider: normalizeTranslateProvider(
-      stored.ollamaProvider || DEFAULT_TRANSLATE_PROVIDER,
-    ),
+    ollamaProvider: normalizedProvider,
     ollamaUrl: stored.ollamaUrl || DEFAULT_OLLAMA_URL,
     ollamaModel: stored.ollamaModel || DEFAULT_OLLAMA_MODEL,
     minimaxApiUrl,
@@ -180,8 +192,8 @@ export function getStoredSettingsShape(stored) {
     minimaxApiKeyCn,
     minimaxApiKeyGlobal,
     minimaxModel: stored.minimaxModel || DEFAULT_MINIMAX_MODEL,
-    ollamaTranslateTargetLang:
-      stored.ollamaTranslateTargetLang || DEFAULT_TRANSLATE_TARGET_LANG,
+    translateTargetLang:
+      stored.translateTargetLang ?? DEFAULT_TRANSLATE_TARGET_LANG,
     ollamaAutoTranslateMode: normalizeAutoTranslateMode(
       stored.ollamaAutoTranslateMode,
       stored.ollamaAutoTranslateSelection,
@@ -200,15 +212,16 @@ export function getStoredSettingsShape(stored) {
     ),
     ollamaPageTranslateBatchSize: String(
       normalizePageTranslateBatchSize(
-        stored.ollamaPageTranslateBatchSize ?? DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
+        stored.ollamaPageTranslateBatchSize ??
+          DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
       ),
     ),
-    ollamaLearningModeEnabled: !!stored.ollamaLearningModeEnabled,
+    learningModeEnabled: !!stored.learningModeEnabled,
   };
 }
 
 export function runGenerateRequest(config, prompt) {
-  if (config.provider === PROVIDER_MINIMAX) {
+  if (isMiniMaxProvider(config.provider)) {
     return generateMiniMaxCompletion(
       config.base,
       config.apiKey,

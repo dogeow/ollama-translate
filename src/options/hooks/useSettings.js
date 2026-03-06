@@ -18,10 +18,7 @@ import {
   DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
   DEFAULT_LEARNING_MODE_ENABLED,
 } from "../../shared/constants.js";
-import {
-  getSettingsSnapshot,
-  getStoredSettingsShape,
-} from "../lib/utils.js";
+import { getSettingsSnapshot, getStoredSettingsShape } from "../lib/utils.js";
 import { storageSyncGet, storageSyncSet } from "../lib/chrome.js";
 
 const INITIAL_SETTINGS = {
@@ -34,13 +31,13 @@ const INITIAL_SETTINGS = {
   minimaxApiKeyCn: DEFAULT_MINIMAX_API_KEY_CN,
   minimaxApiKeyGlobal: DEFAULT_MINIMAX_API_KEY_GLOBAL,
   minimaxModel: DEFAULT_MINIMAX_MODEL,
-  ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
+  translateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
   ollamaAutoTranslateMode: DEFAULT_AUTO_TRANSLATE_MODE,
   ollamaHoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
   ollamaHoverTranslateDelayMs: String(DEFAULT_HOVER_TRANSLATE_DELAY_MS),
   ollamaPageTranslateConcurrency: String(DEFAULT_PAGE_TRANSLATE_CONCURRENCY),
   ollamaPageTranslateBatchSize: String(DEFAULT_PAGE_TRANSLATE_BATCH_SIZE),
-  ollamaLearningModeEnabled: DEFAULT_LEARNING_MODE_ENABLED,
+  learningModeEnabled: DEFAULT_LEARNING_MODE_ENABLED,
 };
 
 /**
@@ -49,7 +46,8 @@ const INITIAL_SETTINGS = {
  */
 export function useSettings() {
   const [settings, setSettings] = useState(INITIAL_SETTINGS);
-  const { status: autoSaveStatus, showStatus: showAutoSaveStatus } = useTransientStatus();
+  const { status: autoSaveStatus, showStatus: showAutoSaveStatus } =
+    useTransientStatus();
   const settingsRef = useRef(settings);
   const lastSavedSettingsRef = useRef("");
   const autoSaveTimerRef = useRef(null);
@@ -97,7 +95,9 @@ export function useSettings() {
     (partial, persistMode = "none", options = {}) => {
       setSettings((previous) => {
         const next =
-          typeof partial === "function" ? partial(previous) : { ...previous, ...partial };
+          typeof partial === "function"
+            ? partial(previous)
+            : { ...previous, ...partial };
         settingsRef.current = next;
         if (persistMode === "now") {
           void persistSettings(next, options).catch((error) => {
@@ -128,20 +128,22 @@ export function useSettings() {
       minimaxApiKeyCn: DEFAULT_MINIMAX_API_KEY_CN,
       minimaxApiKeyGlobal: DEFAULT_MINIMAX_API_KEY_GLOBAL,
       minimaxModel: DEFAULT_MINIMAX_MODEL,
-      ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
+      translateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
       ollamaAutoTranslateMode: DEFAULT_AUTO_TRANSLATE_MODE,
       ollamaAutoTranslateSelection: false,
       ollamaHoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
       ollamaHoverTranslateDelayMs: DEFAULT_HOVER_TRANSLATE_DELAY_MS,
       ollamaPageTranslateConcurrency: DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
       ollamaPageTranslateBatchSize: DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
-      ollamaLearningModeEnabled: DEFAULT_LEARNING_MODE_ENABLED,
+      learningModeEnabled: DEFAULT_LEARNING_MODE_ENABLED,
     });
 
     const nextSettings = getStoredSettingsShape(storedSettings);
     settingsRef.current = nextSettings;
     setSettings(nextSettings);
-    lastSavedSettingsRef.current = JSON.stringify(getSettingsSnapshot(nextSettings));
+    lastSavedSettingsRef.current = JSON.stringify(
+      getSettingsSnapshot(nextSettings),
+    );
     return nextSettings;
   }
 

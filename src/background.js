@@ -10,12 +10,12 @@ import {
 import {
   getMiniMaxApiKeyLabel,
   normalizePageTranslateBatchSize,
-  resolveMiniMaxApiKey,
   normalizeTranslateProvider,
+  resolveMiniMaxApiKey,
+  isMiniMaxProvider,
 } from "./shared/settings.js";
 import {
   PROVIDER_OLLAMA,
-  PROVIDER_MINIMAX,
   DEFAULT_TRANSLATE_PROVIDER,
   DEFAULT_OLLAMA_URL,
   DEFAULT_OLLAMA_MODEL,
@@ -95,14 +95,14 @@ async function runProviderCompletion({
   apiKey,
   prompt,
 }) {
-  if (provider === PROVIDER_MINIMAX) {
+  if (isMiniMaxProvider(provider)) {
     return generateMiniMaxCompletion(base, apiKey, model, prompt);
   }
   return generateOllamaResponse(base, model, prompt);
 }
 
 function toProviderError(provider, error) {
-  if (provider === PROVIDER_MINIMAX) {
+  if (isMiniMaxProvider(provider)) {
     return error?.message || String(error);
   }
   return getOllamaErrorMessage(error, { detailed: true });
@@ -119,8 +119,8 @@ async function translatePageBatchWithProvider(texts) {
     minimaxApiKeyCn: DEFAULT_MINIMAX_API_KEY_CN,
     minimaxApiKeyGlobal: DEFAULT_MINIMAX_API_KEY_GLOBAL,
     minimaxModel: DEFAULT_MINIMAX_MODEL,
-    ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
-    ollamaAppEnabled: DEFAULT_APP_ENABLED,
+    translateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
+    appEnabled: DEFAULT_APP_ENABLED,
     ollamaPageTranslateBatchSize: DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
   });
 
@@ -137,23 +137,24 @@ async function translatePageBatchWithProvider(texts) {
     return { ok: false, error: "empty_texts" };
   }
 
-  if (!settings.ollamaAppEnabled) {
+  if (!settings.appEnabled) {
     return { ok: false, disabled: true };
   }
 
-  const provider = normalizeTranslateProvider(settings.ollamaProvider);
+  const provider = normalizeTranslateProvider(
+    settings.ollamaProvider,
+    settings.minimaxRegion,
+  );
   const targetLang =
-    settings.ollamaTranslateTargetLang || DEFAULT_TRANSLATE_TARGET_LANG;
-  const selectedModel =
-    provider === PROVIDER_MINIMAX
-      ? settings.minimaxModel || DEFAULT_MINIMAX_MODEL
-      : settings.ollamaModel;
-  const base =
-    provider === PROVIDER_MINIMAX
-      ? normalizeMiniMaxBaseUrl(settings.minimaxApiUrl)
-      : String(settings.ollamaUrl || DEFAULT_OLLAMA_URL).replace(/\/$/, "");
+    settings.translateTargetLang ?? DEFAULT_TRANSLATE_TARGET_LANG;
+  const selectedModel = isMiniMaxProvider(provider)
+    ? settings.minimaxModel || DEFAULT_MINIMAX_MODEL
+    : settings.ollamaModel;
+  const base = isMiniMaxProvider(provider)
+    ? normalizeMiniMaxBaseUrl(settings.minimaxApiUrl)
+    : String(settings.ollamaUrl || DEFAULT_OLLAMA_URL).replace(/\/$/, "");
   const minimaxApiKey = resolveMiniMaxApiKey(settings);
-  const apiKey = provider === PROVIDER_MINIMAX ? minimaxApiKey : "";
+  const apiKey = isMiniMaxProvider(provider) ? minimaxApiKey : "";
 
   if (provider === PROVIDER_OLLAMA && !selectedModel) {
     const check = await checkOllamaAndGetModels(settings.ollamaUrl);
@@ -169,7 +170,7 @@ async function translatePageBatchWithProvider(texts) {
     };
   }
 
-  if (provider === PROVIDER_MINIMAX && !apiKey) {
+  if (isMiniMaxProvider(provider) && !apiKey) {
     return {
       ok: false,
       needModel: false,
@@ -177,7 +178,10 @@ async function translatePageBatchWithProvider(texts) {
     };
   }
 
-  const batchPrompt = buildPageBatchTranslatePrompt(normalizedTexts, targetLang);
+  const batchPrompt = buildPageBatchTranslatePrompt(
+    normalizedTexts,
+    targetLang,
+  );
   let translations = [];
   let errorMessage = "";
 
@@ -194,7 +198,10 @@ async function translatePageBatchWithProvider(texts) {
     errorMessage = toProviderError(provider, error);
   }
 
-  if (translations.length !== normalizedTexts.length || !translations.every(Boolean)) {
+  if (
+    translations.length !== normalizedTexts.length ||
+    !translations.every(Boolean)
+  ) {
     return {
       ok: false,
       needModel: false,
@@ -217,9 +224,9 @@ async function translateWithProvider(text, tabId = null, options = {}) {
     minimaxApiKeyCn: DEFAULT_MINIMAX_API_KEY_CN,
     minimaxApiKeyGlobal: DEFAULT_MINIMAX_API_KEY_GLOBAL,
     minimaxModel: DEFAULT_MINIMAX_MODEL,
-    ollamaTranslateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
-    ollamaLearningModeEnabled: DEFAULT_LEARNING_MODE_ENABLED,
-    ollamaAppEnabled: DEFAULT_APP_ENABLED,
+    translateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
+    learningModeEnabled: DEFAULT_LEARNING_MODE_ENABLED,
+    appEnabled: DEFAULT_APP_ENABLED,
   });
 
   const {
@@ -232,19 +239,18 @@ async function translateWithProvider(text, tabId = null, options = {}) {
   const resolvedRequestId = createTranslateRequestId(requestId);
   registerLatestTranslateRequest(tabId, resolvedRequestId);
   const provider = normalizeTranslateProvider(settings.ollamaProvider);
-  const selectedModel =
-    provider === PROVIDER_MINIMAX
-      ? settings.minimaxModel || DEFAULT_MINIMAX_MODEL
-      : settings.ollamaModel;
+  const selectedModel = isMiniMaxProvider(provider)
+    ? settings.minimaxModel || DEFAULT_MINIMAX_MODEL
+    : settings.ollamaModel;
   const targetLang =
-    settings.ollamaTranslateTargetLang || DEFAULT_TRANSLATE_TARGET_LANG;
+    settings.translateTargetLang ?? DEFAULT_TRANSLATE_TARGET_LANG;
   const learningModeEnabled =
     typeof learningModeOverride === "boolean"
       ? learningModeOverride
-      : !!settings.ollamaLearningModeEnabled;
+      : !!settings.learningModeEnabled;
   const minimaxApiKey = resolveMiniMaxApiKey(settings);
 
-  if (!settings.ollamaAppEnabled) {
+  if (!settings.appEnabled) {
     console.log(
       LOG_PREFIX,
       "应用已禁用，静默忽略翻译请求:",
@@ -289,7 +295,7 @@ async function translateWithProvider(text, tabId = null, options = {}) {
     return errorResult;
   }
 
-  if (provider === PROVIDER_MINIMAX && !minimaxApiKey) {
+  if (isMiniMaxProvider(provider) && !minimaxApiKey) {
     const errorResult = buildErrorResult({
       original: text,
       targetLang,
@@ -306,10 +312,9 @@ async function translateWithProvider(text, tabId = null, options = {}) {
     return errorResult;
   }
 
-  const base =
-    provider === PROVIDER_MINIMAX
-      ? normalizeMiniMaxBaseUrl(settings.minimaxApiUrl)
-      : settings.ollamaUrl.replace(/\/$/, "");
+  const base = isMiniMaxProvider(provider)
+    ? normalizeMiniMaxBaseUrl(settings.minimaxApiUrl)
+    : settings.ollamaUrl.replace(/\/$/, "");
   const prompt = buildTranslatePrompt(text, targetLang);
 
   let translation = "";
@@ -322,8 +327,7 @@ async function translateWithProvider(text, tabId = null, options = {}) {
   let latestTranslateResult = null;
   let stopPendingUpdates = false;
   const MIN_SENTENCE_STUDY_THINK_PREVIEW_MS = 260;
-  const sentenceStudyApiKey =
-    provider === PROVIDER_MINIMAX ? minimaxApiKey : "";
+  const sentenceStudyApiKey = isMiniMaxProvider(provider) ? minimaxApiKey : "";
   let sentenceStudyPromise = null;
 
   async function sendPendingProgress(force = false) {
@@ -388,21 +392,15 @@ async function translateWithProvider(text, tabId = null, options = {}) {
   pushSentenceStudyThinking.lastUpdateAt = 0;
 
   if (learningModeEnabled) {
-    sentenceStudyPromise = analyzeSentenceStudy(
-      base,
-      selectedModel,
-      text,
-      "",
-      {
-        provider,
-        apiKey: sentenceStudyApiKey,
-        onThinkingProgress: pushSentenceStudyThinking,
-      },
-    ).catch(() => null);
+    sentenceStudyPromise = analyzeSentenceStudy(base, selectedModel, text, "", {
+      provider,
+      apiKey: sentenceStudyApiKey,
+      onThinkingProgress: pushSentenceStudyThinking,
+    }).catch(() => null);
   }
 
   try {
-    if (provider === PROVIDER_MINIMAX) {
+    if (isMiniMaxProvider(provider)) {
       const streamed = await generateMiniMaxStreamingCompletion(
         base,
         minimaxApiKey,
@@ -440,16 +438,20 @@ async function translateWithProvider(text, tabId = null, options = {}) {
           },
         },
       );
-      const parsedFinal = splitThinkingFromText(streamed.response || translation);
+      const parsedFinal = splitThinkingFromText(
+        streamed.response || translation,
+      );
       translation = parsedFinal.translation;
-      thinking = mergeThinking(streamed.thinking || thinking, parsedFinal.thinking);
+      thinking = mergeThinking(
+        streamed.thinking || thinking,
+        parsedFinal.thinking,
+      );
       await sendPendingProgress(true);
     }
   } catch (e) {
-    error =
-      provider === PROVIDER_MINIMAX
-        ? e.message || String(e)
-        : getOllamaErrorMessage(e, { detailed: true });
+    error = isMiniMaxProvider(provider)
+      ? e.message || String(e)
+      : getOllamaErrorMessage(e, { detailed: true });
   }
 
   const parsedOutput = splitThinkingFromText(translation);
@@ -460,7 +462,8 @@ async function translateWithProvider(text, tabId = null, options = {}) {
     if (!hasSentThinkingPreview) {
       await sendPendingProgress(true);
     }
-    const elapsedSinceLastPending = Date.now() - sendPendingProgress.lastUpdateAt;
+    const elapsedSinceLastPending =
+      Date.now() - sendPendingProgress.lastUpdateAt;
     if (elapsedSinceLastPending < MIN_THINK_PREVIEW_MS) {
       await new Promise((resolve) =>
         setTimeout(resolve, MIN_THINK_PREVIEW_MS - elapsedSinceLastPending),
@@ -707,7 +710,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     !("ollamaAutoTranslateMode" in changes) &&
     !("ollamaAutoTranslateSelection" in changes) &&
     !("ollamaHoverTranslateScope" in changes) &&
-    !("ollamaAppEnabled" in changes)
+    !("appEnabled" in changes)
   ) {
     return;
   }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AI_REQUEST_LOG_STORAGE_KEY } from "../../shared/constants.js";
+import { isMiniMaxProvider } from "../../shared/settings.js";
 import {
   storageLocalGetValue,
   storageLocalRemove,
@@ -110,7 +111,7 @@ function normalizeLogEntry(entry) {
     parsed.thinkingFromThinkTag,
   );
   const hasThinkInResponse = THINK_ANY_TAG_RE.test(responseRaw);
-  const isMiniMax = String(entry?.provider || "").toLowerCase() === "minimax";
+  const isMiniMax = isMiniMaxProvider(entry?.provider);
   const responseBody =
     isMiniMax || hasThinkInResponse
       ? parsed.responseBody || ""

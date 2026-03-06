@@ -1,8 +1,6 @@
 import { useRef, useState } from "react";
-import {
-  DEFAULT_TRANSLATE_TARGET_LANG,
-  PROVIDER_MINIMAX,
-} from "../../shared/constants.js";
+import { DEFAULT_TRANSLATE_TARGET_LANG } from "../../shared/constants.js";
+import { isMiniMaxProvider } from "../../shared/settings.js";
 import { isOllama403Error } from "../../shared/ollama-errors.js";
 import { getConfig, runGenerateRequest } from "../lib/utils.js";
 
@@ -97,18 +95,18 @@ export function useTranslateTest({
 
   function getConfigValidationError(config) {
     if (!config.model) {
-      return config.provider === PROVIDER_MINIMAX
+      return isMiniMaxProvider(config.provider)
         ? "请先填写 MiniMax 模型"
         : "请先选择模型";
     }
-    if (config.provider === PROVIDER_MINIMAX && !config.apiKey) {
+    if (isMiniMaxProvider(config.provider) && !config.apiKey) {
       return `请先填写${config.apiKeyLabel || "MiniMax API Key"}`;
     }
     return "";
   }
 
   function handleProviderError(config, error) {
-    if (config.provider !== PROVIDER_MINIMAX && isOllama403Error(error)) {
+    if (!isMiniMaxProvider(config.provider) && isOllama403Error(error)) {
       show403();
       return true;
     }
@@ -154,7 +152,7 @@ export function useTranslateTest({
         text: formatErrorMessage(error, config.provider),
         isError: true,
       });
-      if (config.provider !== PROVIDER_MINIMAX) {
+      if (!isMiniMaxProvider(config.provider)) {
         setOriginsModalOpen(true);
       }
     }
@@ -203,7 +201,7 @@ export function useTranslateTest({
         text: formatErrorMessage(error, config.provider),
         tone: "error",
       });
-      if (config.provider !== PROVIDER_MINIMAX) {
+      if (!isMiniMaxProvider(config.provider)) {
         setOriginsModalOpen(true);
       }
     }

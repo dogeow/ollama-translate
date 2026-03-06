@@ -11,8 +11,8 @@ export { TARGET_LANG_LABELS } from "../shared/constants.js";
 /** 检查应用是否启用 */
 export async function isAppEnabled() {
   try {
-    const value = await chrome.storage.sync.get("ollamaAppEnabled");
-    return value.ollamaAppEnabled !== false;
+    const value = await chrome.storage.sync.get("appEnabled");
+    return value.appEnabled !== false;
   } catch {
     return true;
   }
