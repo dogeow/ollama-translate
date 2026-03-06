@@ -13,7 +13,7 @@ import {
   DEFAULT_MINIMAX_MODEL,
   DEFAULT_TRANSLATE_TARGET_LANG,
   DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
-  DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
+  DEFAULT_PAGE_TRANSLATE_BATCH_CHARS,
   ORIGINS_PLATFORM_CONTENT,
 } from "./constants.js";
 
@@ -33,7 +33,7 @@ import {
   normalizeHoverTranslateScope,
   normalizeHoverTranslateDelayMs,
   normalizePageTranslateConcurrency,
-  normalizePageTranslateBatchSize,
+  normalizePageTranslateBatchChars,
 } from "../../shared/settings.js";
 import { generateCompletion } from "../../shared/ollama-api.js";
 import { generateMiniMaxCompletion } from "../../shared/minimax-api.js";
@@ -45,7 +45,7 @@ export {
   normalizeHoverTranslateScope,
   normalizeHoverTranslateDelayMs,
   normalizePageTranslateConcurrency,
-  normalizePageTranslateBatchSize,
+  normalizePageTranslateBatchChars,
 };
 
 export function getSettingsSnapshot(settings) {
@@ -117,8 +117,8 @@ export function getSettingsSnapshot(settings) {
     ollamaPageTranslateConcurrency: normalizePageTranslateConcurrency(
       settings.ollamaPageTranslateConcurrency,
     ),
-    ollamaPageTranslateBatchSize: normalizePageTranslateBatchSize(
-      settings.ollamaPageTranslateBatchSize,
+    ollamaPageTranslateBatchChars: normalizePageTranslateBatchChars(
+      settings.ollamaPageTranslateBatchChars,
     ),
     learningModeEnabled: !!settings.learningModeEnabled,
   };
@@ -210,10 +210,10 @@ export function getStoredSettingsShape(stored) {
           DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
       ),
     ),
-    ollamaPageTranslateBatchSize: String(
-      normalizePageTranslateBatchSize(
-        stored.ollamaPageTranslateBatchSize ??
-          DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
+    ollamaPageTranslateBatchChars: String(
+      normalizePageTranslateBatchChars(
+        stored.ollamaPageTranslateBatchChars ??
+          DEFAULT_PAGE_TRANSLATE_BATCH_CHARS,
       ),
     ),
     learningModeEnabled: !!stored.learningModeEnabled,

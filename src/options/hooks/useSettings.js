@@ -15,7 +15,7 @@ import {
   DEFAULT_HOVER_TRANSLATE_SCOPE,
   DEFAULT_HOVER_TRANSLATE_DELAY_MS,
   DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
-  DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
+  DEFAULT_PAGE_TRANSLATE_BATCH_CHARS,
   DEFAULT_LEARNING_MODE_ENABLED,
 } from "../../shared/constants.js";
 import { getSettingsSnapshot, getStoredSettingsShape } from "../lib/utils.js";
@@ -36,7 +36,7 @@ const INITIAL_SETTINGS = {
   ollamaHoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
   ollamaHoverTranslateDelayMs: String(DEFAULT_HOVER_TRANSLATE_DELAY_MS),
   ollamaPageTranslateConcurrency: String(DEFAULT_PAGE_TRANSLATE_CONCURRENCY),
-  ollamaPageTranslateBatchSize: String(DEFAULT_PAGE_TRANSLATE_BATCH_SIZE),
+  ollamaPageTranslateBatchChars: String(DEFAULT_PAGE_TRANSLATE_BATCH_CHARS),
   learningModeEnabled: DEFAULT_LEARNING_MODE_ENABLED,
 };
 
@@ -134,7 +134,7 @@ export function useSettings() {
       ollamaHoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
       ollamaHoverTranslateDelayMs: DEFAULT_HOVER_TRANSLATE_DELAY_MS,
       ollamaPageTranslateConcurrency: DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
-      ollamaPageTranslateBatchSize: DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
+      ollamaPageTranslateBatchChars: DEFAULT_PAGE_TRANSLATE_BATCH_CHARS,
       learningModeEnabled: DEFAULT_LEARNING_MODE_ENABLED,
     });
 

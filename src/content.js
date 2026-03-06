@@ -30,7 +30,7 @@ import {
   DEFAULT_HOVER_TRANSLATE_SCOPE,
   DEFAULT_HOVER_TRANSLATE_DELAY_MS,
   DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
-  DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
+  DEFAULT_PAGE_TRANSLATE_BATCH_CHARS,
   SELECTION_AUTO_TRANSLATE_DELAY_MS,
 } from "./shared/constants.js";
 import {
@@ -38,7 +38,7 @@ import {
   normalizeHoverTranslateScope,
   normalizeHoverTranslateDelayMs,
   normalizePageTranslateConcurrency,
-  normalizePageTranslateBatchSize,
+  normalizePageTranslateBatchChars,
 } from "./shared/settings.js";
 
 const CONTENT_STATE_KEY = "__OLLAMA_TRANSLATE_CONTENT_STATE__";
@@ -88,7 +88,7 @@ function initContentScript() {
   let activeTipRequestId = "";
   let dismissedTipRequestId = "";
   let pageTranslateConcurrency = DEFAULT_PAGE_TRANSLATE_CONCURRENCY;
-  let pageTranslateBatchSize = DEFAULT_PAGE_TRANSLATE_BATCH_SIZE;
+  let pageTranslateBatchChars = DEFAULT_PAGE_TRANSLATE_BATCH_CHARS;
   let pageTranslator = null;
 
   function isMostlyChineseText(text) {
@@ -152,13 +152,13 @@ function initContentScript() {
     pageTranslateConcurrency = normalizePageTranslateConcurrency(
       cfg.ollamaPageTranslateConcurrency,
     );
-    pageTranslateBatchSize = normalizePageTranslateBatchSize(
-      cfg.ollamaPageTranslateBatchSize,
+    pageTranslateBatchChars = normalizePageTranslateBatchChars(
+      cfg.ollamaPageTranslateBatchChars,
     );
     if (pageTranslator) {
       pageTranslator.updateOptions({
         maxConcurrent: pageTranslateConcurrency,
-        batchSize: pageTranslateBatchSize,
+        batchChars: pageTranslateBatchChars,
       });
     }
     if (autoTranslateMode !== "hotkey") hideButton();
@@ -174,7 +174,7 @@ function initContentScript() {
       ollamaHoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
       ollamaHoverTranslateDelayMs: DEFAULT_HOVER_TRANSLATE_DELAY_MS,
       ollamaPageTranslateConcurrency: DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
-      ollamaPageTranslateBatchSize: DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
+      ollamaPageTranslateBatchChars: DEFAULT_PAGE_TRANSLATE_BATCH_CHARS,
     },
     applyAutoTranslateSettings,
   );
@@ -188,7 +188,7 @@ function initContentScript() {
       !("ollamaHoverTranslateScope" in changes) &&
       !("ollamaHoverTranslateDelayMs" in changes) &&
       !("ollamaPageTranslateConcurrency" in changes) &&
-      !("ollamaPageTranslateBatchSize" in changes)
+      !("ollamaPageTranslateBatchChars" in changes)
     ) {
       return;
     }
@@ -200,7 +200,7 @@ function initContentScript() {
         ollamaHoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
         ollamaHoverTranslateDelayMs: DEFAULT_HOVER_TRANSLATE_DELAY_MS,
         ollamaPageTranslateConcurrency: DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
-        ollamaPageTranslateBatchSize: DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
+        ollamaPageTranslateBatchChars: DEFAULT_PAGE_TRANSLATE_BATCH_CHARS,
       },
       applyAutoTranslateSettings,
     );
@@ -322,7 +322,7 @@ function initContentScript() {
     isUiElement: (element) => isExtensionUiTarget(element),
     initialOptions: {
       maxConcurrent: pageTranslateConcurrency,
-      batchSize: pageTranslateBatchSize,
+      batchChars: pageTranslateBatchChars,
     },
   });
 

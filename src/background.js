@@ -9,7 +9,6 @@ import {
 } from "./background/sentenceStudy.js";
 import {
   getMiniMaxApiKeyLabel,
-  normalizePageTranslateBatchSize,
   normalizeTranslateProvider,
   resolveMiniMaxApiKey,
   isMiniMaxProvider,
@@ -26,11 +25,11 @@ import {
   DEFAULT_MINIMAX_REGION,
   DEFAULT_MINIMAX_MODEL,
   DEFAULT_TRANSLATE_TARGET_LANG,
-  DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
   DEFAULT_LEARNING_MODE_ENABLED,
   DEFAULT_APP_ENABLED,
 } from "./shared/constants.js";
 import { getOllamaErrorMessage } from "./shared/ollama-errors.js";
+import { filterTranslationModels } from "./shared/model-utils.js";
 import {
   generateMiniMaxCompletion,
   generateMiniMaxStreamingCompletion,
@@ -121,17 +120,14 @@ async function translatePageBatchWithProvider(texts) {
     minimaxModel: DEFAULT_MINIMAX_MODEL,
     translateTargetLang: DEFAULT_TRANSLATE_TARGET_LANG,
     appEnabled: DEFAULT_APP_ENABLED,
-    ollamaPageTranslateBatchSize: DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
   });
 
-  const maxBatchSize = normalizePageTranslateBatchSize(
-    settings.ollamaPageTranslateBatchSize,
-  );
+  const MAX_TEXTS_PER_BATCH = 32;
   const normalizedTexts = Array.isArray(texts)
     ? texts
         .map((text) => String(text || "").trim())
         .filter(Boolean)
-        .slice(0, maxBatchSize)
+        .slice(0, MAX_TEXTS_PER_BATCH)
     : [];
   if (normalizedTexts.length === 0) {
     return { ok: false, error: "empty_texts" };
@@ -161,7 +157,7 @@ async function translatePageBatchWithProvider(texts) {
     return {
       ok: false,
       needModel: true,
-      models: check.models || [],
+      models: filterTranslationModels(check.models || []),
       error: check.error
         ? check.error === "403"
           ? "403"
@@ -668,7 +664,7 @@ chrome.contextMenus.onClicked.addListener(async (info, clickedTab) => {
     if (!response?.ok) {
       console.warn(
         LOG_PREFIX,
-        "右键菜单触发整页翻译失败:",
+        "右键菜单触发页面翻译失败:",
         response?.error || "unknown_error",
       );
     }

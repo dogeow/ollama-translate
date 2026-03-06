@@ -4,6 +4,8 @@ import { OriginsModal } from "./components/OriginsModal.jsx";
 import { TranslateResultView } from "./components/TranslateResultView.jsx";
 import { Sidebar } from "./components/Sidebar.jsx";
 import { HomeTab } from "./components/HomeTab.jsx";
+import { PickModeTab } from "./components/PickModeTab.jsx";
+import { PageTranslateTab } from "./components/PageTranslateTab.jsx";
 import { TranslateTestTab } from "./components/TranslateTestTab.jsx";
 import { ShortcutsTab } from "./components/ShortcutsTab.jsx";
 import { AiLogsTab } from "./components/AiLogsTab.jsx";
@@ -59,7 +61,6 @@ export function OptionsApp() {
   const translateTest = useTranslateTest({
     settingsRef,
     setConnectionStatus,
-    setOriginsModalOpen,
   });
 
   useEffect(() => {
@@ -177,17 +178,38 @@ export function OptionsApp() {
 
             <div
               className="options-tabs__panel"
-              hidden={activeTab !== "shortcuts"}
-              key="shortcuts"
+              hidden={activeTab !== "pick-mode"}
+              key="pick-mode"
             >
-              <ShortcutsTab
+              <PickModeTab
                 settings={settings}
                 settingsRef={settingsRef}
                 updateSettings={updateSettings}
                 persistSettings={persistSettings}
                 showAutoSaveStatus={showAutoSaveStatus}
-                shortcuts={shortcuts}
               />
+            </div>
+
+            <div
+              className="options-tabs__panel"
+              hidden={activeTab !== "page-translate"}
+              key="page-translate"
+            >
+              <PageTranslateTab
+                settings={settings}
+                settingsRef={settingsRef}
+                updateSettings={updateSettings}
+                persistSettings={persistSettings}
+                showAutoSaveStatus={showAutoSaveStatus}
+              />
+            </div>
+
+            <div
+              className="options-tabs__panel"
+              hidden={activeTab !== "shortcuts"}
+              key="shortcuts"
+            >
+              <ShortcutsTab shortcuts={shortcuts} />
             </div>
 
             <div

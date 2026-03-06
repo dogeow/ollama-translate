@@ -27,15 +27,15 @@ export const INPUT_LIMITS = {
     step: 1,
     default: 2,
     suffix: "请求",
-    hint: "同时发送的整页翻译请求数，默认 2。",
+    hint: "同时发送的页面翻译请求数，默认 2。",
   },
-  pageTranslateBatchSize: {
-    min: 1,
-    max: 12,
-    step: 1,
-    default: 6,
-    suffix: "条/批",
-    hint: "每次请求合并多少段文本一起翻译，默认 6。数值越大，请求更少但单次响应更慢。",
+  pageTranslateBatchChars: {
+    min: 32,
+    max: 2048,
+    step: 32,
+    default: 128,
+    suffix: "字符",
+    hint: "每批累计文字达到该长度后不再加条，避免短句过多时提示词比正文还长。默认 128。",
   },
 };
 

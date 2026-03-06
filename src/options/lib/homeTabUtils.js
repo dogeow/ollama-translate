@@ -81,7 +81,6 @@ export function createSettingsUpdateHandler(
     };
     updateSettings(() => nextSettings, "now");
     void updateConnectionStatus(nextSettings, {
-      skipModalOnError: true,
       preserveTestMessage: false,
       ...connectionTestOptions,
     });
@@ -138,7 +137,6 @@ export function handleMinimaxRegionChange(
 
   updateSettings(() => nextSettings, "now");
   void updateConnectionStatus(nextSettings, {
-    skipModalOnError: true,
     preserveTestMessage: false,
     suppressTestMessageOnMissingKey: !nextRegionKey,
   });

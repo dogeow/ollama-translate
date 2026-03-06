@@ -10,7 +10,8 @@ export function ModelDropdown({
   dropdownRef,
 }) {
   const selectedModel = models.find((item) => item.name === selectedValue);
-  let triggerName = "请先点击「测试连接」获取模型列表";
+  let triggerName =
+    models.length === 0 ? "请先点击「测试连接」获取模型列表" : "请选择模型";
   let triggerSize = "";
 
   if (selectedModel) {
@@ -25,7 +26,11 @@ export function ModelDropdown({
       ref={dropdownRef}
       className={`model-dropdown ${disabled ? "model-dropdown--disabled" : ""}`.trim()}
     >
-      <button type="button" className="model-dropdown-trigger" onClick={onToggle}>
+      <button
+        type="button"
+        className="model-dropdown-trigger"
+        onClick={onToggle}
+      >
         <span className="model-dropdown-name">{triggerName}</span>
         <span className="model-dropdown-size">{triggerSize}</span>
       </button>

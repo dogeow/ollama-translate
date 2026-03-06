@@ -76,7 +76,7 @@ export async function createContextMenus() {
 
   chrome.contextMenus.create({
     id: MENU_TRANSLATE_PAGE,
-    title: "Ollama 翻译整个网页（可视区域优先）",
+    title: "Ollama 翻译整个页面（可视区域优先）",
     contexts: ["page"],
   });
 

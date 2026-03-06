@@ -51,11 +51,7 @@ function normalizeTranslationText(text) {
 /**
  * 管理翻译测试面板状态的 hook
  */
-export function useTranslateTest({
-  settingsRef,
-  setConnectionStatus,
-  setOriginsModalOpen,
-}) {
+export function useTranslateTest({ settingsRef, setConnectionStatus }) {
   const detectRequestIdRef = useRef(0);
   const translateRequestIdRef = useRef(0);
   const [testInput, setTestInput] = useState("");
@@ -82,7 +78,6 @@ export function useTranslateTest({
       text: "Ollama 已运行，但拒绝扩展请求（403）",
       showAction: true,
     });
-    setOriginsModalOpen(true);
   }
 
   function formatErrorMessage(error, provider) {
@@ -152,9 +147,6 @@ export function useTranslateTest({
         text: formatErrorMessage(error, config.provider),
         isError: true,
       });
-      if (!isMiniMaxProvider(config.provider)) {
-        setOriginsModalOpen(true);
-      }
     }
   }
 
@@ -201,9 +193,6 @@ export function useTranslateTest({
         text: formatErrorMessage(error, config.provider),
         tone: "error",
       });
-      if (!isMiniMaxProvider(config.provider)) {
-        setOriginsModalOpen(true);
-      }
     }
   }
 

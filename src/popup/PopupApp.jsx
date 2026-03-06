@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { createDefaultUpdateState, UPDATE_STATE_KEY } from "../shared/update.js";
+import {
+  createDefaultUpdateState,
+  UPDATE_STATE_KEY,
+} from "../shared/update.js";
 import { TRANSLATE_PROVIDER_OPTIONS } from "../options/lib/constants.js";
 import {
   AUTO_TRANSLATE_MODE_OPTIONS,
@@ -17,20 +20,22 @@ import {
 } from "./hooks/usePopupSettings.js";
 
 // 为 popup 创建简洁版选项（使用 shortTitle）
-const AUTO_MODE_OPTIONS = AUTO_TRANSLATE_MODE_OPTIONS.map(option => ({
+const AUTO_MODE_OPTIONS = AUTO_TRANSLATE_MODE_OPTIONS.map((option) => ({
   value: option.value,
   title: option.shortTitle,
 }));
 
-const HOVER_SCOPE_OPTIONS = HOVER_TRANSLATE_SCOPE_OPTIONS.map(option => ({
+const HOVER_SCOPE_OPTIONS = HOVER_TRANSLATE_SCOPE_OPTIONS.map((option) => ({
   value: option.value,
   title: option.title,
 }));
 
 export function PopupApp() {
   const currentVersion = chrome.runtime.getManifest().version;
-  const [updateState, setUpdateState] = useState(createDefaultUpdateState(currentVersion));
-  
+  const [updateState, setUpdateState] = useState(
+    createDefaultUpdateState(currentVersion),
+  );
+
   // 使用自定义 hooks 管理状态
   const popupSettings = usePopupSettings();
   const pageTranslate = usePageTranslate(popupSettings.appEnabled);
@@ -85,17 +90,14 @@ export function PopupApp() {
           onOpenUpdate={openUpdatePage}
         />
       )}
-      <Panel
-        title="快速操作"
-        isSubtle
-      >
+      <Panel title="快速操作" isSubtle>
         <button
           type="button"
           className="btn btn-primary popup-page-translate-btn"
           onClick={pageTranslate.startPageTranslate}
           disabled={!popupSettings.appEnabled || pageTranslate.isStarting}
         >
-          {pageTranslate.isStarting ? "启动中..." : "开始整页翻译"}
+          {pageTranslate.isStarting ? "启动中..." : "开始页面翻译"}
         </button>
         {pageTranslate.status && (
           <div className="popup-page-translate-status" role="status">
@@ -120,10 +122,7 @@ export function PopupApp() {
           </select>
         </div>
       </Panel>
-      <Panel
-        title="自动翻译模式"
-        className="popup-panel--mode"
-      >
+      <Panel title="自动翻译模式" className="popup-panel--mode">
         <ChoiceGrid
           options={AUTO_MODE_OPTIONS}
           value={popupSettings.autoTranslateMode}
@@ -131,10 +130,7 @@ export function PopupApp() {
         />
       </Panel>
       {popupSettings.autoTranslateMode === "hover" && (
-        <Panel
-          title="悬停取词范围"
-          isSubtle
-        >
+        <Panel title="悬停取词范围" isSubtle>
           <ChoiceGrid
             options={HOVER_SCOPE_OPTIONS}
             value={popupSettings.hoverTranslateScope}

@@ -1,5 +1,7 @@
 import {
   IconHome,
+  IconCursor,
+  IconPage,
   IconTranslate,
   IconKeyboard,
   IconLogs,
@@ -10,6 +12,8 @@ import {
 
 const NAV_ITEMS = [
   { id: "home", label: "首页", Icon: IconHome },
+  { id: "pick-mode", label: "取词方式", Icon: IconCursor },
+  { id: "page-translate", label: "页面翻译", Icon: IconPage },
   { id: "translate", label: "翻译测试", Icon: IconTranslate },
   { id: "shortcuts", label: "快捷键", Icon: IconKeyboard },
   { id: "logs", label: "请求日志", Icon: IconLogs },

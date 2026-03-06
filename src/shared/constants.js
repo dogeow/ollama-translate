@@ -44,7 +44,8 @@ export const DEFAULT_AUTO_TRANSLATE_MODE = "hotkey";
 export const DEFAULT_HOVER_TRANSLATE_SCOPE = "word";
 export const DEFAULT_HOVER_TRANSLATE_DELAY_MS = 200;
 export const DEFAULT_PAGE_TRANSLATE_CONCURRENCY = 1;
-export const DEFAULT_PAGE_TRANSLATE_BATCH_SIZE = 8;
+/** 页面翻译每批最少字符数，达到后不再继续加条；默认 128，用户可设置 */
+export const DEFAULT_PAGE_TRANSLATE_BATCH_CHARS = 128;
 
 // 自动翻译模式选项（统一定义，避免重复）
 export const AUTO_TRANSLATE_MODE_OPTIONS = [

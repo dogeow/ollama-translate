@@ -27,7 +27,7 @@ import {
   DEFAULT_HOVER_TRANSLATE_SCOPE,
   DEFAULT_HOVER_TRANSLATE_DELAY_MS,
   DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
-  DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
+  DEFAULT_PAGE_TRANSLATE_BATCH_CHARS,
   DEFAULT_LEARNING_MODE_ENABLED,
 } from "./constants.js";
 
@@ -49,7 +49,7 @@ export const DEFAULT_SETTINGS = {
   hoverTranslateScope: DEFAULT_HOVER_TRANSLATE_SCOPE,
   hoverTranslateDelayMs: DEFAULT_HOVER_TRANSLATE_DELAY_MS,
   pageTranslateConcurrency: DEFAULT_PAGE_TRANSLATE_CONCURRENCY,
-  pageTranslateBatchSize: DEFAULT_PAGE_TRANSLATE_BATCH_SIZE,
+  pageTranslateBatchChars: DEFAULT_PAGE_TRANSLATE_BATCH_CHARS,
   learningModeEnabled: DEFAULT_LEARNING_MODE_ENABLED,
 };
 
@@ -234,7 +234,7 @@ export function normalizeHoverTranslateDelayMs(value) {
 }
 
 /**
- * 规范化整页翻译并发数
+ * 规范化页面翻译并发数
  * @param {string|number} value
  * @returns {number} 1-8
  */
@@ -248,16 +248,16 @@ export function normalizePageTranslateConcurrency(value) {
 }
 
 /**
- * 规范化整页翻译批量条数
+ * 规范化页面翻译批量字符数（每批累计文字达到该长度后不再加条）
  * @param {string|number} value
- * @returns {number} 1-12
+ * @returns {number} 32-2048，默认 128
  */
-export function normalizePageTranslateBatchSize(value) {
+export function normalizePageTranslateBatchChars(value) {
   if (value === "" || value == null)
-    return DEFAULT_SETTINGS.pageTranslateBatchSize;
+    return DEFAULT_SETTINGS.pageTranslateBatchChars;
   const number = Number(value);
-  if (!Number.isFinite(number)) return DEFAULT_SETTINGS.pageTranslateBatchSize;
-  return Math.min(12, Math.max(1, Math.round(number)));
+  if (!Number.isFinite(number)) return DEFAULT_SETTINGS.pageTranslateBatchChars;
+  return Math.min(2048, Math.max(32, Math.round(number)));
 }
 
 /**
@@ -326,8 +326,8 @@ export function normalizeAllSettings(settings) {
     ollamaPageTranslateConcurrency: normalizePageTranslateConcurrency(
       settings.ollamaPageTranslateConcurrency,
     ),
-    ollamaPageTranslateBatchSize: normalizePageTranslateBatchSize(
-      settings.ollamaPageTranslateBatchSize,
+    ollamaPageTranslateBatchChars: normalizePageTranslateBatchChars(
+      settings.ollamaPageTranslateBatchChars,
     ),
     learningModeEnabled: !!settings.learningModeEnabled,
   };

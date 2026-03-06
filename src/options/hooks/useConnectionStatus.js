@@ -9,6 +9,7 @@ import {
   isMiniMaxGlobalApiUrl,
   isMiniMaxProvider,
 } from "../../shared/settings.js";
+import { filterTranslationModels } from "../../shared/model-utils.js";
 
 /**
  * 管理翻译提供商连接状态的 hook
@@ -75,7 +76,6 @@ export function useConnectionStatus({
   const updateConnectionStatus = useCallback(
     async (nextSettings, options = {}) => {
       const {
-        skipModalOnError = false,
         preserveTestMessage = false,
         suppressTestMessageOnMissingKey = false,
         updateBannerStatus = true,
@@ -196,7 +196,6 @@ export function useConnectionStatus({
             preserveTestMessage,
             updateBannerStatus,
           });
-          if (!skipModalOnError) setOriginsModalOpen(true);
           return;
         }
 
@@ -205,7 +204,7 @@ export function useConnectionStatus({
         }
 
         const tagsData = await tagsResponse.json();
-        const nextModels = tagsData.models || [];
+        const nextModels = filterTranslationModels(tagsData.models || []);
         const probeResponse = await fetch(`${base}/api/__probe_origin__`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -219,7 +218,6 @@ export function useConnectionStatus({
             preserveTestMessage,
             updateBannerStatus,
           });
-          if (!skipModalOnError) setOriginsModalOpen(true);
           return;
         }
 
@@ -262,7 +260,6 @@ export function useConnectionStatus({
             showAction: true,
           });
         }
-        if (!skipModalOnError) setOriginsModalOpen(true);
       }
     },
     [settingsRef, updateSettings, persistSettings],

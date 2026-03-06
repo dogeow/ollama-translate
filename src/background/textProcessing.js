@@ -20,7 +20,7 @@ export function normalizeDisplayText(text) {
 export function splitThinkingFromText(text) {
   const THINK_BLOCK_RE = /<think\b[^>]*>([\s\S]*?)<\/think>/gi;
   const THINK_OPEN_TAG_RE = /<think\b[^>]*>/i;
-  
+
   const raw = String(text || "");
   const thinkingParts = [];
   let stripped = raw.replace(THINK_BLOCK_RE, (match, inner) => {
@@ -64,7 +64,7 @@ export function buildTranslatePrompt(text, targetLang) {
 }
 
 /**
- * 构建批量翻译 Prompt（整页翻译）
+ * 构建批量翻译 Prompt（页面翻译）
  */
 export function buildPageBatchTranslatePrompt(texts, targetLang) {
   const numbered = texts.map((t, i) => `${i + 1}. ${t}`).join("\n");
@@ -140,7 +140,8 @@ export function extractFirstJsonArrayString(rawText) {
  * 检查是否为限流错误
  */
 export function isRateLimitError(errorMessage) {
-  const RATE_LIMIT_ERROR_RE = /(?:\b429\b|rate[ -]?limit|too many requests|usage limit|quota)/i;
+  const RATE_LIMIT_ERROR_RE =
+    /(?:\b429\b|rate[ -]?limit|too many requests|usage limit|quota)/i;
   return RATE_LIMIT_ERROR_RE.test(String(errorMessage || ""));
 }
 
@@ -167,7 +168,9 @@ export function parsePageBatchTranslations(rawText, expectedCount) {
           ? payload.translations
           : [];
 
-      const normalized = list.map(normalizeBatchTranslationItem).filter(Boolean);
+      const normalized = list
+        .map(normalizeBatchTranslationItem)
+        .filter(Boolean);
       if (normalized.length === expectedCount) {
         return normalized;
       }

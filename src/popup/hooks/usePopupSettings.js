@@ -170,7 +170,7 @@ export function usePopupSettings() {
 }
 
 /**
- * 管理整页翻译功能的 Hook
+ * 管理页面翻译功能的 Hook
  */
 export function usePageTranslate(appEnabled) {
   const [isStarting, setIsStarting] = useState(false);
@@ -200,7 +200,7 @@ export function usePageTranslate(appEnabled) {
         (response) => {
           setIsStarting(false);
           if (chrome.runtime.lastError) {
-            showStatus("当前页面不支持整页翻译。");
+            showStatus("当前页面不支持页面翻译。");
             return;
           }
           if (response?.ok) {

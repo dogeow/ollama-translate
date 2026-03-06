@@ -17,7 +17,8 @@ const PAGE_TRANSLATE_SCAN_DEBOUNCE_MS = 180;
 const PAGE_TRANSLATE_MAX_QUEUE_SIZE = 80;
 const PAGE_TRANSLATE_MAX_SCAN_NODES = 1200;
 const PAGE_TRANSLATE_DEFAULT_CONCURRENT = 1;
-const PAGE_TRANSLATE_DEFAULT_BATCH_SIZE = 8;
+const PAGE_TRANSLATE_DEFAULT_BATCH_CHARS = 128;
+const PAGE_TRANSLATE_MAX_ITEMS_PER_BATCH = 32;
 const PAGE_TRANSLATE_MAX_CACHE_SIZE = 300;
 const PAGE_TRANSLATE_PENDING_CLASS = "ollama-page-translate-pending";
 const PAGE_TRANSLATE_RETRY_DELAY_MS = 8000;
@@ -133,11 +134,11 @@ export function createVisualPageTranslator({
     8,
     PAGE_TRANSLATE_DEFAULT_CONCURRENT,
   );
-  let batchSize = normalizePositiveInt(
-    initialOptions.batchSize,
-    1,
-    12,
-    PAGE_TRANSLATE_DEFAULT_BATCH_SIZE,
+  let batchChars = normalizePositiveInt(
+    initialOptions.batchChars,
+    32,
+    2048,
+    PAGE_TRANSLATE_DEFAULT_BATCH_CHARS,
   );
   let hasShownRateLimitMessage = false;
 
@@ -193,7 +194,8 @@ export function createVisualPageTranslator({
     const text = normalizeText(node.textContent);
     if (!text || text.length < 2) return false;
     if (!SIGNIFICANT_CHAR_RE.test(text)) return false;
-    if (typeof shouldSkipText === "function" && shouldSkipText(text)) return false;
+    if (typeof shouldSkipText === "function" && shouldSkipText(text))
+      return false;
 
     return true;
   }
@@ -224,17 +226,13 @@ export function createVisualPageTranslator({
     const root = document.body;
     if (!root) return [];
 
-    const walker = document.createTreeWalker(
-      root,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode(node) {
-          return isNodeEligible(node)
-            ? NodeFilter.FILTER_ACCEPT
-            : NodeFilter.FILTER_REJECT;
-        },
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        return isNodeEligible(node)
+          ? NodeFilter.FILTER_ACCEPT
+          : NodeFilter.FILTER_REJECT;
       },
-    );
+    });
 
     const nodes = [];
     let current = walker.nextNode();
@@ -307,7 +305,9 @@ export function createVisualPageTranslator({
           for (const item of unresolved) {
             const response = await requestChunkTranslation(item.task.text);
             if (!response?.ok && isRateLimitedError(response?.error)) {
-              const rateLimitError = new Error(response.error || "rate_limited");
+              const rateLimitError = new Error(
+                response.error || "rate_limited",
+              );
               rateLimitError.code = "RATE_LIMIT";
               throw rateLimitError;
             }
@@ -372,8 +372,17 @@ export function createVisualPageTranslator({
     if (!active) return;
 
     while (inFlightCount < maxConcurrent && queue.length > 0) {
-      const currentBatchSize = Math.min(batchSize, queue.length);
-      const tasks = queue.splice(0, currentBatchSize);
+      let totalChars = 0;
+      let takeCount = 0;
+      while (
+        takeCount < queue.length &&
+        takeCount < PAGE_TRANSLATE_MAX_ITEMS_PER_BATCH &&
+        (takeCount === 0 || totalChars < batchChars)
+      ) {
+        totalChars += queue[takeCount].text.length;
+        takeCount += 1;
+      }
+      const tasks = queue.splice(0, takeCount);
       inFlightCount += 1;
       void processQueueBatch(tasks)
         .then((successFlags = []) => {
@@ -411,9 +420,12 @@ export function createVisualPageTranslator({
           });
           if (rateLimited) {
             queue.length = 0;
-            if (!hasShownRateLimitMessage && typeof onStatusMessage === "function") {
+            if (
+              !hasShownRateLimitMessage &&
+              typeof onStatusMessage === "function"
+            ) {
               hasShownRateLimitMessage = true;
-              onStatusMessage("翻译额度不足/触发限流，已暂停整页翻译。");
+              onStatusMessage("翻译额度不足/触发限流，已暂停页面翻译。");
             }
             stop();
           }
@@ -438,7 +450,7 @@ export function createVisualPageTranslator({
       active = true;
       ensureMutationObserver();
       if (typeof onStatusMessage === "function") {
-        onStatusMessage("已开始整页翻译：先翻译可视区域，滚动后继续翻译。");
+        onStatusMessage("已开始页面翻译：先翻译可视区域，滚动后继续翻译。");
       }
     } else if (typeof onStatusMessage === "function") {
       onStatusMessage("继续翻译当前可视区域内容。");
@@ -475,7 +487,12 @@ export function createVisualPageTranslator({
       8,
       maxConcurrent,
     );
-    batchSize = normalizePositiveInt(nextOptions.batchSize, 1, 12, batchSize);
+    batchChars = normalizePositiveInt(
+      nextOptions.batchChars,
+      32,
+      2048,
+      batchChars,
+    );
     if (active) {
       pumpQueue();
     }

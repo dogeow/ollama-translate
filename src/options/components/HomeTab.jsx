@@ -10,12 +10,15 @@ import {
   getDefaultMiniMaxApiUrlByRegion,
   isMiniMaxProvider,
 } from "../../shared/settings.js";
+import { useRef } from "react";
 import { Card } from "./common/Card.jsx";
 import {
   AutoSaveInputField,
   AutoSaveSelectField,
   ConditionalFields,
 } from "./common/AutoSaveField.jsx";
+import { ModelDropdown } from "./ModelDropdown.jsx";
+import { useOutsideClick } from "../hooks/useOutsideClick.js";
 import {
   getConnectionResultClass,
   getMiniMaxConfig,
@@ -31,7 +34,16 @@ export function HomeTab({
   setOriginsModalOpen,
   testConnectionResult,
   updateConnectionStatus,
+  models,
+  modelDropdownOpen,
+  setModelDropdownOpen,
 }) {
+  const modelDropdownRef = useRef(null);
+  useOutsideClick(
+    modelDropdownRef,
+    () => setModelDropdownOpen(false),
+    modelDropdownOpen,
+  );
   const isMiniMax = isMiniMaxProvider(settings.ollamaProvider);
   const testConnectionClassName = getConnectionResultClass(
     testConnectionResult.tone,
@@ -58,8 +70,9 @@ export function HomeTab({
     }
     updateSettings(() => nextSettings, "now");
     void updateConnectionStatus(nextSettings, {
-      skipModalOnError: true,
       preserveTestMessage: false,
+      updateBannerStatus: false,
+      showTestPending: true,
     });
   };
 
@@ -107,21 +120,36 @@ export function HomeTab({
           />
         </ConditionalFields>
 
-        <AutoSaveInputField
-          id="providerModel"
-          label="模型"
-          placeholder={
-            isMiniMax
-              ? "输入 MiniMax 模型，例如 MiniMax-M2.5-highspeed"
-              : "输入 Ollama 模型，例如 qwen2.5:7b"
-          }
-          value={isMiniMax ? settings.minimaxModel : settings.ollamaModel}
-          settingKey={isMiniMax ? "minimaxModel" : "ollamaModel"}
-          updateSettings={updateSettings}
-          persistSettings={persistSettings}
-          settingsRef={settingsRef}
-          showAutoSaveStatus={showAutoSaveStatus}
-        />
+        {isMiniMax ? (
+          <AutoSaveInputField
+            id="providerModel"
+            label="模型"
+            placeholder="输入 MiniMax 模型，例如 MiniMax-M2.5-highspeed"
+            value={settings.minimaxModel}
+            settingKey="minimaxModel"
+            updateSettings={updateSettings}
+            persistSettings={persistSettings}
+            settingsRef={settingsRef}
+            showAutoSaveStatus={showAutoSaveStatus}
+          />
+        ) : (
+          <div className="field">
+            <label id="providerModel-label">模型</label>
+            <ModelDropdown
+              models={models}
+              selectedValue={settings.ollamaModel}
+              disabled={models.length === 0}
+              isOpen={modelDropdownOpen}
+              onToggle={() => setModelDropdownOpen((v) => !v)}
+              onSelect={(name) => {
+                updateSettings({ ollamaModel: name }, "now");
+                void persistSettings(settingsRef.current);
+                setModelDropdownOpen(false);
+              }}
+              dropdownRef={modelDropdownRef}
+            />
+          </div>
+        )}
 
         <div className="field">
           <div className="field-row" style={{ marginTop: 10 }}>
@@ -131,7 +159,6 @@ export function HomeTab({
               disabled={isMiniMaxKeyMissing}
               onClick={async () => {
                 await updateConnectionStatus(settingsRef.current, {
-                  skipModalOnError: true,
                   preserveTestMessage: false,
                   updateBannerStatus: false,
                   showTestPending: true,
