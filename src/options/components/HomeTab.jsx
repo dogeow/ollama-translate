@@ -25,6 +25,133 @@ import {
   isMiniMaxKeyMissing as checkMiniMaxKeyMissing,
 } from "../lib/homeTabUtils.js";
 
+const FIELD_IDS = Object.freeze({
+  provider: "ollamaProvider",
+  providerApiUrl: "providerApiUrl",
+  minimaxRegionApiKey: "minimaxRegionApiKey",
+  providerModel: "providerModel",
+  translateTargetLang: "translateTargetLang",
+});
+
+function MiniMaxApiKeyField({
+  isMiniMax,
+  minimaxConfig,
+  isMiniMaxKeyMissing,
+  minimaxKeyMissingHint,
+  updateSettings,
+  persistSettings,
+  settingsRef,
+  showAutoSaveStatus,
+}) {
+  return (
+    <ConditionalFields condition={isMiniMax}>
+      <AutoSaveInputField
+        id={FIELD_IDS.minimaxRegionApiKey}
+        label={minimaxConfig.apiKeyLabel}
+        placeholder={`输入${minimaxConfig.isGlobal ? "海外" : "国内"} sk- 开头的 MiniMax API Key`}
+        value={minimaxConfig.apiKeyValue}
+        settingKey={
+          minimaxConfig.isGlobal ? "minimaxApiKeyGlobal" : "minimaxApiKeyCn"
+        }
+        updateSettings={updateSettings}
+        persistSettings={persistSettings}
+        settingsRef={settingsRef}
+        showAutoSaveStatus={showAutoSaveStatus}
+        error={isMiniMaxKeyMissing ? minimaxKeyMissingHint : null}
+      />
+    </ConditionalFields>
+  );
+}
+
+function ProviderModelField({
+  isMiniMax,
+  settings,
+  updateSettings,
+  persistSettings,
+  settingsRef,
+  showAutoSaveStatus,
+  models,
+  modelDropdownOpen,
+  setModelDropdownOpen,
+  modelDropdownRef,
+}) {
+  if (isMiniMax) {
+    return (
+      <AutoSaveInputField
+        id={FIELD_IDS.providerModel}
+        label="模型"
+        placeholder="输入 MiniMax 模型，例如 MiniMax-M2.5-highspeed"
+        value={settings.minimaxModel}
+        settingKey="minimaxModel"
+        updateSettings={updateSettings}
+        persistSettings={persistSettings}
+        settingsRef={settingsRef}
+        showAutoSaveStatus={showAutoSaveStatus}
+      />
+    );
+  }
+
+  return (
+    <div className="field">
+      <label id={`${FIELD_IDS.providerModel}-label`}>模型</label>
+      <ModelDropdown
+        models={models}
+        selectedValue={settings.ollamaModel}
+        disabled={models.length === 0}
+        isOpen={modelDropdownOpen}
+        onToggle={() => setModelDropdownOpen((v) => !v)}
+        onSelect={(name) => {
+          updateSettings({ ollamaModel: name }, "now");
+          void persistSettings(settingsRef.current);
+          setModelDropdownOpen(false);
+        }}
+        dropdownRef={modelDropdownRef}
+      />
+    </div>
+  );
+}
+
+function ConnectionTestField({
+  isMiniMax,
+  isMiniMaxKeyMissing,
+  testConnectionClassName,
+  testConnectionResult,
+  settingsRef,
+  updateConnectionStatus,
+  setOriginsModalOpen,
+}) {
+  return (
+    <div className="field">
+      <div className="field-row" style={{ marginTop: 10 }}>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={isMiniMaxKeyMissing}
+          onClick={async () => {
+            await updateConnectionStatus(settingsRef.current, {
+              preserveTestMessage: false,
+              updateBannerStatus: false,
+              showTestPending: true,
+            });
+          }}
+        >
+          测试连接
+        </button>
+        <span className={testConnectionClassName}>{testConnectionResult.text}</span>
+        {!isMiniMax && testConnectionResult.showAction ? (
+          <button
+            type="button"
+            className="btn btn-secondary test-result-action"
+            onClick={() => setOriginsModalOpen(true)}
+          >
+            查看解决方法
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function HomeTab({
   settings,
   updateSettings,
@@ -80,7 +207,7 @@ export function HomeTab({
     <>
       <Card title="翻译引擎">
         <AutoSaveSelectField
-          id="ollamaProvider"
+          id={FIELD_IDS.provider}
           label="API 厂家"
           value={settings.ollamaProvider}
           options={TRANSLATE_PROVIDER_OPTIONS}
@@ -90,7 +217,7 @@ export function HomeTab({
         />
 
         <AutoSaveInputField
-          id="providerApiUrl"
+          id={FIELD_IDS.providerApiUrl}
           label={isMiniMax ? "MiniMax API 地址" : "Ollama API 地址"}
           placeholder={
             isMiniMax ? minimaxConfig.urlPlaceholder : "http://127.0.0.1:11434"
@@ -103,92 +230,47 @@ export function HomeTab({
           showAutoSaveStatus={showAutoSaveStatus}
         />
 
-        <ConditionalFields condition={isMiniMax}>
-          <AutoSaveInputField
-            id="minimaxRegionApiKey"
-            label={minimaxConfig.apiKeyLabel}
-            placeholder={`输入${minimaxConfig.isGlobal ? "海外" : "国内"} sk- 开头的 MiniMax API Key`}
-            value={minimaxConfig.apiKeyValue}
-            settingKey={
-              minimaxConfig.isGlobal ? "minimaxApiKeyGlobal" : "minimaxApiKeyCn"
-            }
-            updateSettings={updateSettings}
-            persistSettings={persistSettings}
-            settingsRef={settingsRef}
-            showAutoSaveStatus={showAutoSaveStatus}
-            error={isMiniMaxKeyMissing ? minimaxKeyMissingHint : null}
-          />
-        </ConditionalFields>
+        <MiniMaxApiKeyField
+          isMiniMax={isMiniMax}
+          minimaxConfig={minimaxConfig}
+          isMiniMaxKeyMissing={isMiniMaxKeyMissing}
+          minimaxKeyMissingHint={minimaxKeyMissingHint}
+          updateSettings={updateSettings}
+          persistSettings={persistSettings}
+          settingsRef={settingsRef}
+          showAutoSaveStatus={showAutoSaveStatus}
+        />
 
-        {isMiniMax ? (
-          <AutoSaveInputField
-            id="providerModel"
-            label="模型"
-            placeholder="输入 MiniMax 模型，例如 MiniMax-M2.5-highspeed"
-            value={settings.minimaxModel}
-            settingKey="minimaxModel"
-            updateSettings={updateSettings}
-            persistSettings={persistSettings}
-            settingsRef={settingsRef}
-            showAutoSaveStatus={showAutoSaveStatus}
-          />
-        ) : (
-          <div className="field">
-            <label id="providerModel-label">模型</label>
-            <ModelDropdown
-              models={models}
-              selectedValue={settings.ollamaModel}
-              disabled={models.length === 0}
-              isOpen={modelDropdownOpen}
-              onToggle={() => setModelDropdownOpen((v) => !v)}
-              onSelect={(name) => {
-                updateSettings({ ollamaModel: name }, "now");
-                void persistSettings(settingsRef.current);
-                setModelDropdownOpen(false);
-              }}
-              dropdownRef={modelDropdownRef}
-            />
-          </div>
-        )}
+        <ProviderModelField
+          isMiniMax={isMiniMax}
+          settings={settings}
+          updateSettings={updateSettings}
+          persistSettings={persistSettings}
+          settingsRef={settingsRef}
+          showAutoSaveStatus={showAutoSaveStatus}
+          models={models}
+          modelDropdownOpen={modelDropdownOpen}
+          setModelDropdownOpen={setModelDropdownOpen}
+          modelDropdownRef={modelDropdownRef}
+        />
 
-        <div className="field">
-          <div className="field-row" style={{ marginTop: 10 }}>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={isMiniMaxKeyMissing}
-              onClick={async () => {
-                await updateConnectionStatus(settingsRef.current, {
-                  preserveTestMessage: false,
-                  updateBannerStatus: false,
-                  showTestPending: true,
-                });
-              }}
-            >
-              测试连接
-            </button>
-            <span className={testConnectionClassName}>
-              {testConnectionResult.text}
-            </span>
-            {!isMiniMax && testConnectionResult.showAction ? (
-              <button
-                type="button"
-                className="btn btn-secondary test-result-action"
-                onClick={() => setOriginsModalOpen(true)}
-              >
-                查看解决方法
-              </button>
-            ) : null}
-          </div>
-        </div>
+        <ConnectionTestField
+          isMiniMax={isMiniMax}
+          isMiniMaxKeyMissing={isMiniMaxKeyMissing}
+          testConnectionClassName={testConnectionClassName}
+          testConnectionResult={testConnectionResult}
+          settingsRef={settingsRef}
+          updateConnectionStatus={updateConnectionStatus}
+          setOriginsModalOpen={setOriginsModalOpen}
+        />
       </Card>
 
       <div className="card">
         <h2>翻译偏好</h2>
         <div className="field">
-          <label htmlFor="translateTargetLang">默认翻译语言</label>
+          <label htmlFor={FIELD_IDS.translateTargetLang}>默认翻译语言</label>
           <select
-            id="translateTargetLang"
+            id={FIELD_IDS.translateTargetLang}
             className="select"
             value={settings.translateTargetLang}
             onChange={(event) => {

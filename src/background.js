@@ -234,7 +234,10 @@ async function translateWithProvider(text, tabId = null, options = {}) {
   } = options;
   const resolvedRequestId = createTranslateRequestId(requestId);
   registerLatestTranslateRequest(tabId, resolvedRequestId);
-  const provider = normalizeTranslateProvider(settings.ollamaProvider);
+  const provider = normalizeTranslateProvider(
+    settings.ollamaProvider,
+    settings.minimaxRegion,
+  );
   const selectedModel = isMiniMaxProvider(provider)
     ? settings.minimaxModel || DEFAULT_MINIMAX_MODEL
     : settings.ollamaModel;
